@@ -1,0 +1,449 @@
+{
+  "entities": {
+    "ResidentProfile": {
+      "title": "ResidentProfile",
+      "description": "Private neighborhood resident profile stored per authenticated user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the resident."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Resident display name."
+        },
+        "email": {
+          "type": "string",
+          "description": "Resident Google account email."
+        },
+        "preferredSector": {
+          "type": "string",
+          "description": "Resident sector in Hay Al-Wurud."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "displayName", "preferredSector", "createdAt", "updatedAt"]
+    },
+    "FavoriteService": {
+      "title": "FavoriteService",
+      "description": "Private resident bookmark for a neighborhood craftsman or essential service.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "serviceId": {
+          "type": "string",
+          "description": "Document ID of the bookmarked service."
+        },
+        "serviceName": {
+          "type": "string",
+          "description": "Cached name of the craftsman or shop."
+        },
+        "specialty": {
+          "type": "string",
+          "description": "Service specialty label."
+        },
+        "workPhone": {
+          "type": "string",
+          "description": "Public business phone number."
+        },
+        "sector": {
+          "type": "string",
+          "description": "Neighborhood sector."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "serviceId", "serviceName", "specialty", "sector", "createdAt"]
+    },
+    "UtilityUpdate": {
+      "title": "UtilityUpdate",
+      "description": "Neighborhood live status report for water, electricity, bread, gas, or transit.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Author Firebase Auth UID."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Display name of reporting resident."
+        },
+        "utilityType": {
+          "type": "string",
+          "enum": ["WATER", "ELECTRICITY", "BREAD", "GAS", "TRANSPORT"],
+          "description": "Type of neighborhood utility."
+        },
+        "sector": {
+          "type": "string",
+          "description": "Neighborhood sector in Hay Al-Wurud."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["AVAILABLE", "CUT", "CROWDED", "SCHEDULED"],
+          "description": "Current operational status."
+        },
+        "note": {
+          "type": "string",
+          "description": "Details reported by resident."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["NEIGHBORHOOD"],
+          "description": "Shared neighborhood scope."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "authorName", "utilityType", "sector", "status", "visibility", "createdAt", "updatedAt"]
+    },
+    "ServiceProvider": {
+      "title": "ServiceProvider",
+      "description": "Neighborhood craftsman, shop, pharmacy, or essential service listing.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Author Firebase Auth UID."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Name of resident who added the listing."
+        },
+        "name": {
+          "type": "string",
+          "description": "Business or craftsman name."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["MAINTENANCE", "HEALTH", "FOOD", "TRANSPORT", "EDUCATION", "OTHER"],
+          "description": "Directory category."
+        },
+        "specialty": {
+          "type": "string",
+          "description": "Specific trade or shop type."
+        },
+        "sector": {
+          "type": "string",
+          "description": "Neighborhood location/sector."
+        },
+        "workPhone": {
+          "type": "string",
+          "description": "Public business phone number."
+        },
+        "workingHours": {
+          "type": "string",
+          "description": "Operating hours."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Helpful details for residents."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["NEIGHBORHOOD"],
+          "description": "Shared neighborhood scope."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "authorName", "name", "category", "specialty", "sector", "workPhone", "visibility", "createdAt", "updatedAt"]
+    },
+    "CommunityPost": {
+      "title": "CommunityPost",
+      "description": "Resident post for neighborhood solidarity, lost & found, local market, or notices.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Author Firebase Auth UID."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Display name of posting resident."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short post headline."
+        },
+        "description": {
+          "type": "string",
+          "description": "Full post details."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["HELP", "LOST_FOUND", "MARKET", "NOTICE"],
+          "description": "Post category."
+        },
+        "sector": {
+          "type": "string",
+          "description": "Neighborhood sector."
+        },
+        "priceText": {
+          "type": "string",
+          "description": "Optional price or free tag."
+        },
+        "contactNote": {
+          "type": "string",
+          "description": "Optional public contact note or meetup point."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["OPEN", "RESOLVED"],
+          "description": "Post lifecycle state."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["NEIGHBORHOOD"],
+          "description": "Shared neighborhood scope."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "authorName", "title", "description", "category", "sector", "status", "visibility", "createdAt", "updatedAt"]
+    },
+    "ServiceRecommendation": {
+      "title": "ServiceRecommendation",
+      "description": "One-per-resident neighborhood endorsement for a service provider.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Endorsing resident Firebase Auth UID."
+        },
+        "serviceId": {
+          "type": "string",
+          "description": "Referenced ServiceProvider document ID."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Display name of endorsing resident."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["NEIGHBORHOOD"],
+          "description": "Shared neighborhood scope."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "serviceId", "authorName", "visibility", "createdAt"]
+    },
+    "NeighborhoodStore": {
+      "title": "NeighborhoodStore",
+      "description": "Registered local commercial shop in Hay Al-Wurud (clothing, shoes, cosmetics, stationery, computer & accessories).",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Store owner Firebase Auth UID."
+        },
+        "ownerName": {
+          "type": "string",
+          "description": "Display name of the shop owner."
+        },
+        "name": {
+          "type": "string",
+          "description": "Commercial store name."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["CLOTHING", "SHOES", "COSMETICS", "STATIONERY", "TECH_ACCESSORIES", "HOME_GIFTS", "OTHER"],
+          "description": "Store commercial category."
+        },
+        "sector": {
+          "type": "string",
+          "description": "Neighborhood sector where the shop is located."
+        },
+        "phone": {
+          "type": "string",
+          "description": "Public shop phone number."
+        },
+        "whatsappPhone": {
+          "type": "string",
+          "description": "Optional WhatsApp contact number."
+        },
+        "workingHours": {
+          "type": "string",
+          "description": "Optional store opening hours."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional short store description."
+        },
+        "storeOpen": {
+          "type": "boolean",
+          "description": "Whether the shop is currently open."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["NEIGHBORHOOD"],
+          "description": "Shared neighborhood scope."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "ownerName", "name", "category", "sector", "phone", "storeOpen", "visibility", "createdAt", "updatedAt"]
+    },
+    "StoreProduct": {
+      "title": "StoreProduct",
+      "description": "Product or special offer listed by a registered neighborhood store.",
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "description": "Referenced NeighborhoodStore document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Store owner Firebase Auth UID."
+        },
+        "storeName": {
+          "type": "string",
+          "description": "Denormalized store name."
+        },
+        "storeCategory": {
+          "type": "string",
+          "enum": ["CLOTHING", "SHOES", "COSMETICS", "STATIONERY", "TECH_ACCESSORIES", "HOME_GIFTS", "OTHER"],
+          "description": "Denormalized store category."
+        },
+        "storeSector": {
+          "type": "string",
+          "description": "Denormalized store sector."
+        },
+        "storePhone": {
+          "type": "string",
+          "description": "Denormalized store phone number."
+        },
+        "title": {
+          "type": "string",
+          "description": "Product or offer title."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional product description."
+        },
+        "priceText": {
+          "type": "string",
+          "description": "Current display price."
+        },
+        "originalPriceText": {
+          "type": "string",
+          "description": "Optional previous price before discount."
+        },
+        "onOffer": {
+          "type": "boolean",
+          "description": "Whether this item is featured as a special offer."
+        },
+        "inStock": {
+          "type": "boolean",
+          "description": "Whether this product is currently in stock."
+        },
+        "specsText": {
+          "type": "string",
+          "description": "Optional sizes, colors, or technical specifications."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["NEIGHBORHOOD"],
+          "description": "Shared neighborhood scope."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["storeId", "userId", "storeName", "storeCategory", "storeSector", "storePhone", "title", "priceText", "onOffer", "inStock", "visibility", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/ResidentProfile" },
+      "description": "Private resident profile document."
+    },
+    "/users/{userId}/favorites/{serviceId}": {
+      "schema": { "$ref": "#/entities/FavoriteService" },
+      "description": "Resident bookmarked neighborhood services."
+    },
+    "/utility_updates/{reportId}": {
+      "schema": { "$ref": "#/entities/UtilityUpdate" },
+      "description": "Shared neighborhood utility status updates."
+    },
+    "/service_providers/{serviceId}": {
+      "schema": { "$ref": "#/entities/ServiceProvider" },
+      "description": "Shared directory of neighborhood craftsmen and essential shops."
+    },
+    "/service_recommendations/{recId}": {
+      "schema": { "$ref": "#/entities/ServiceRecommendation" },
+      "description": "Resident endorsements for craftsmen and services."
+    },
+    "/community_posts/{postId}": {
+      "schema": { "$ref": "#/entities/CommunityPost" },
+      "description": "Shared neighborhood board for help requests, lost & found, market, and notices."
+    },
+    "/stores/{storeId}": {
+      "schema": { "$ref": "#/entities/NeighborhoodStore" },
+      "description": "Registered neighborhood retail shops showcasing goods and offers."
+    },
+    "/store_products/{productId}": {
+      "schema": { "$ref": "#/entities/StoreProduct" },
+      "description": "Products and special offers published by registered store owners."
+    }
+  }
+}

@@ -1,0 +1,354 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Hardened Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // --- Validation Helpers ---
+    function isValidResidentProfile(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             data.preferredSector is string && data.preferredSector.size() >= 1 && data.preferredSector.size() <= 60 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 160)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidFavoriteService(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.serviceId is string && isValidId(data.serviceId) &&
+             data.serviceName is string && data.serviceName.size() >= 1 && data.serviceName.size() <= 100 &&
+             data.specialty is string && data.specialty.size() >= 1 && data.specialty.size() <= 100 &&
+             data.sector is string && data.sector.size() >= 1 && data.sector.size() <= 60 &&
+             (!('workPhone' in data) || (data.workPhone is string && data.workPhone.size() <= 30)) &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    function isValidUtilityUpdate(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+             data.utilityType in ['WATER', 'ELECTRICITY', 'BREAD', 'GAS', 'TRANSPORT'] &&
+             data.sector is string && data.sector.size() >= 1 && data.sector.size() <= 60 &&
+             data.status in ['AVAILABLE', 'CUT', 'CROWDED', 'SCHEDULED'] &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 300)) &&
+             data.visibility == 'NEIGHBORHOOD' &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidServiceProvider(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+             data.category in ['MAINTENANCE', 'HEALTH', 'FOOD', 'TRANSPORT', 'EDUCATION', 'OTHER'] &&
+             data.specialty is string && data.specialty.size() >= 2 && data.specialty.size() <= 100 &&
+             data.sector is string && data.sector.size() >= 1 && data.sector.size() <= 60 &&
+             data.workPhone is string && data.workPhone.size() >= 4 && data.workPhone.size() <= 30 &&
+             (!('workingHours' in data) || (data.workingHours is string && data.workingHours.size() <= 80)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 300)) &&
+             data.visibility == 'NEIGHBORHOOD' &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCommunityPost(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+             data.description is string && data.description.size() >= 2 && data.description.size() <= 600 &&
+             data.category in ['HELP', 'LOST_FOUND', 'MARKET', 'NOTICE'] &&
+             data.sector is string && data.sector.size() >= 1 && data.sector.size() <= 60 &&
+             (!('priceText' in data) || (data.priceText is string && data.priceText.size() <= 60)) &&
+             (!('contactNote' in data) || (data.contactNote is string && data.contactNote.size() <= 120)) &&
+             data.status in ['OPEN', 'RESOLVED'] &&
+             data.visibility == 'NEIGHBORHOOD' &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidServiceRecommendation(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.serviceId is string && isValidId(data.serviceId) &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+             data.visibility == 'NEIGHBORHOOD' &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    function isValidStoreCategory(cat) {
+      return cat in ['CLOTHING', 'SHOES', 'COSMETICS', 'STATIONERY', 'TECH_ACCESSORIES', 'HOME_GIFTS', 'OTHER'];
+    }
+
+    function isValidStore(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.ownerName is string && data.ownerName.size() >= 1 && data.ownerName.size() <= 80 &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+             isValidStoreCategory(data.category) &&
+             data.sector is string && data.sector.size() >= 1 && data.sector.size() <= 60 &&
+             data.phone is string && data.phone.size() >= 4 && data.phone.size() <= 30 &&
+             (!('whatsappPhone' in data) || (data.whatsappPhone is string && data.whatsappPhone.size() <= 30)) &&
+             (!('workingHours' in data) || (data.workingHours is string && data.workingHours.size() <= 80)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 300)) &&
+             data.storeOpen is bool &&
+             data.visibility == 'NEIGHBORHOOD' &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidStoreProduct(data) {
+      return data.storeId is string && isValidId(data.storeId) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.storeName is string && data.storeName.size() >= 2 && data.storeName.size() <= 100 &&
+             isValidStoreCategory(data.storeCategory) &&
+             data.storeSector is string && data.storeSector.size() >= 1 && data.storeSector.size() <= 60 &&
+             data.storePhone is string && data.storePhone.size() >= 4 && data.storePhone.size() <= 30 &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 100 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 300)) &&
+             data.priceText is string && data.priceText.size() >= 1 && data.priceText.size() <= 60 &&
+             (!('originalPriceText' in data) || (data.originalPriceText is string && data.originalPriceText.size() <= 60)) &&
+             data.onOffer is bool &&
+             data.inStock is bool &&
+             (!('specsText' in data) || (data.specsText is string && data.specsText.size() <= 100)) &&
+             data.visibility == 'NEIGHBORHOOD' &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // --- 1. Private Resident Profile & Favorites ---
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isValidId(userId) &&
+                       isOwner(userId) &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'preferredSector', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'preferredSector', 'createdAt', 'updatedAt']) &&
+                       isValidResidentProfile(incoming());
+
+      allow update: if isValidId(userId) &&
+                       isOwner(userId) &&
+                       isValidResidentProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'preferredSector', 'updatedAt']);
+
+      allow delete: if isValidId(userId) && isOwner(userId);
+
+      match /favorites/{serviceId} {
+        allow get: if isValidId(serviceId) && isOwner(userId);
+        allow list: if isOwner(userId);
+
+        allow create: if isValidId(serviceId) &&
+                         isOwner(userId) &&
+                         incoming().serviceId == serviceId &&
+                         incoming().keys().hasAll(['userId', 'serviceId', 'serviceName', 'specialty', 'sector', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'serviceId', 'serviceName', 'specialty', 'workPhone', 'sector', 'createdAt']) &&
+                         isValidFavoriteService(incoming());
+
+        allow update: if isValidId(serviceId) &&
+                         isOwner(userId) &&
+                         isValidFavoriteService(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().serviceId == existing().serviceId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['serviceName', 'specialty', 'workPhone', 'sector']);
+
+        allow delete: if isValidId(serviceId) && isOwner(userId);
+      }
+    }
+
+    // --- 2. Shared Neighborhood Utility Status Updates ---
+    match /utility_updates/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) &&
+                    (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+      allow list: if isSignedIn() &&
+                     (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+
+      allow create: if isSignedIn() &&
+                       isValidId(reportId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'authorName', 'utilityType', 'sector', 'status', 'visibility', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'authorName', 'utilityType', 'sector', 'status', 'note', 'visibility', 'createdAt', 'updatedAt']) &&
+                       isValidUtilityUpdate(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(reportId) &&
+                       existing().userId == request.auth.uid &&
+                       isValidUtilityUpdate(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().authorName == existing().authorName &&
+                       incoming().utilityType == existing().utilityType &&
+                       incoming().visibility == existing().visibility &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['sector', 'status', 'note', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(reportId) && existing().userId == request.auth.uid;
+    }
+
+    // --- 3. Shared Neighborhood Services & Craftsmen Directory ---
+    match /service_providers/{serviceId} {
+      allow get: if isSignedIn() && isValidId(serviceId) &&
+                    (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+      allow list: if isSignedIn() &&
+                     (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+
+      allow create: if isSignedIn() &&
+                       isValidId(serviceId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'authorName', 'name', 'category', 'specialty', 'sector', 'workPhone', 'visibility', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'authorName', 'name', 'category', 'specialty', 'sector', 'workPhone', 'workingHours', 'notes', 'visibility', 'createdAt', 'updatedAt']) &&
+                       isValidServiceProvider(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(serviceId) &&
+                       existing().userId == request.auth.uid &&
+                       isValidServiceProvider(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().authorName == existing().authorName &&
+                       incoming().visibility == existing().visibility &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'specialty', 'sector', 'workPhone', 'workingHours', 'notes', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(serviceId) && existing().userId == request.auth.uid;
+    }
+
+    // --- 3b. Neighborhood Endorsements ("أنصح به") ---
+    match /service_recommendations/{recId} {
+      allow get: if isSignedIn() && isValidId(recId) &&
+                    (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+      allow list: if isSignedIn() &&
+                     (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+
+      allow create: if isSignedIn() &&
+                       isValidId(recId) &&
+                       incoming().keys().hasAll(['userId', 'serviceId', 'authorName', 'visibility', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'serviceId', 'authorName', 'visibility', 'createdAt']) &&
+                       isValidServiceRecommendation(incoming()) &&
+                       recId == incoming().serviceId + '_' + request.auth.uid &&
+                       exists(/databases/$(database)/documents/service_providers/$(incoming().serviceId));
+
+      allow update: if false;
+
+      allow delete: if isSignedIn() && isValidId(recId) && existing().userId == request.auth.uid;
+    }
+
+    // --- 4. Shared Community Board (Help, Lost & Found, Market, Notices) ---
+    match /community_posts/{postId} {
+      allow get: if isSignedIn() && isValidId(postId) &&
+                    (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+      allow list: if isSignedIn() &&
+                     (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+
+      allow create: if isSignedIn() &&
+                       isValidId(postId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'OPEN' &&
+                       incoming().keys().hasAll(['userId', 'authorName', 'title', 'description', 'category', 'sector', 'status', 'visibility', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'authorName', 'title', 'description', 'category', 'sector', 'priceText', 'contactNote', 'status', 'visibility', 'createdAt', 'updatedAt']) &&
+                       isValidCommunityPost(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(postId) &&
+                       existing().userId == request.auth.uid &&
+                       existing().status == 'OPEN' &&
+                       isValidCommunityPost(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().authorName == existing().authorName &&
+                       incoming().visibility == existing().visibility &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         // Action: Edit details while OPEN
+                         (incoming().status == 'OPEN' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'category', 'sector', 'priceText', 'contactNote', 'updatedAt'])) ||
+                         // Action: Mark as RESOLVED (Terminal State Locking)
+                         (incoming().status == 'RESOLVED' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(postId) && existing().userId == request.auth.uid;
+    }
+
+    // --- 5. Registered Neighborhood Retail Stores ---
+    match /stores/{storeId} {
+      allow get: if isSignedIn() && isValidId(storeId) &&
+                    (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+      allow list: if isSignedIn() &&
+                     (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+
+      allow create: if isSignedIn() &&
+                       isValidId(storeId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'ownerName', 'name', 'category', 'sector', 'phone', 'storeOpen', 'visibility', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'ownerName', 'name', 'category', 'sector', 'phone', 'whatsappPhone', 'workingHours', 'description', 'storeOpen', 'visibility', 'createdAt', 'updatedAt']) &&
+                       isValidStore(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(storeId) &&
+                       existing().userId == request.auth.uid &&
+                       isValidStore(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().ownerName == existing().ownerName &&
+                       incoming().visibility == existing().visibility &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'sector', 'phone', 'whatsappPhone', 'workingHours', 'description', 'storeOpen', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(storeId) && existing().userId == request.auth.uid;
+    }
+
+    // --- 6. Store Products & Daily Offers ---
+    match /store_products/{productId} {
+      allow get: if isSignedIn() && isValidId(productId) &&
+                    (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+      allow list: if isSignedIn() &&
+                     (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+
+      allow create: if isSignedIn() &&
+                       isValidId(productId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['storeId', 'userId', 'storeName', 'storeCategory', 'storeSector', 'storePhone', 'title', 'priceText', 'onOffer', 'inStock', 'visibility', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['storeId', 'userId', 'storeName', 'storeCategory', 'storeSector', 'storePhone', 'title', 'description', 'priceText', 'originalPriceText', 'onOffer', 'inStock', 'specsText', 'visibility', 'createdAt', 'updatedAt']) &&
+                       isValidStoreProduct(incoming()) &&
+                       exists(/databases/$(database)/documents/stores/$(incoming().storeId)) &&
+                       get(/databases/$(database)/documents/stores/$(incoming().storeId)).data.userId == request.auth.uid;
+
+      allow update: if isSignedIn() &&
+                       isValidId(productId) &&
+                       existing().userId == request.auth.uid &&
+                       isValidStoreProduct(incoming()) &&
+                       incoming().storeId == existing().storeId &&
+                       incoming().userId == existing().userId &&
+                       incoming().visibility == existing().visibility &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'priceText', 'originalPriceText', 'onOffer', 'inStock', 'specsText', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(productId) && existing().userId == request.auth.uid;
+    }
+  }
+}

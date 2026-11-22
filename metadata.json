@@ -1,0 +1,6 @@
+{
+  "name": "حي الورود",
+  "description": "تطبيق خدمي ومجتمعي لأهالي حي الورود بدمشق يشمل دليل الحرفيين والخدمات، متاجر وبضائع الحي وعروضها، مواعيد المياه والكهرباء والأفران، وإعلانات وفزعة الجيران.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
