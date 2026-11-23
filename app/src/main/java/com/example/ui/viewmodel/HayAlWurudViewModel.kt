@@ -6,6 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.firebase.HayAlWurudRepository
 import com.example.data.model.CommunityPost
 import com.example.data.model.CraftFilterCategory
+import com.example.data.model.DeliveryOrderType
+import com.example.data.model.DeliveryRequest
+import com.example.data.model.DeliveryStatus
+import com.example.data.model.DeliveryVehicleType
+import com.example.data.model.DeliveryZone
 import com.example.data.model.FavoriteService
 import com.example.data.model.NeighborhoodStore
 import com.example.data.model.PostCategory
@@ -15,6 +20,7 @@ import com.example.data.model.ServiceProvider
 import com.example.data.model.ServiceRecommendation
 import com.example.data.model.StoreCategory
 import com.example.data.model.StoreProduct
+import com.example.data.model.StoreReview
 import com.example.data.model.UtilityStatus
 import com.example.data.model.UtilityType
 import com.example.data.model.UtilityUpdate
@@ -100,6 +106,14 @@ class HayAlWurudViewModel(
         repository.observeStoreProducts()
             .toUiStateFlow("تعذّر تحميل بضائع وعروض المتاجر")
 
+    val storeReviewsState: StateFlow<UiState<List<StoreReview>>> =
+        repository.observeStoreReviews()
+            .toUiStateFlow("تعذّر تحميل تقييمات المتاجر")
+
+    val deliveryRequestsState: StateFlow<UiState<List<DeliveryRequest>>> =
+        repository.observeDeliveryRequests()
+            .toUiStateFlow("تعذّر تحميل طلبات التوصيل والنقل")
+
     private val _serviceSearchQuery = MutableStateFlow("")
     val serviceSearchQuery: StateFlow<String> = _serviceSearchQuery.asStateFlow()
 
@@ -129,6 +143,9 @@ class HayAlWurudViewModel(
 
     private val _showOffersOnly = MutableStateFlow(false)
     val showOffersOnly: StateFlow<Boolean> = _showOffersOnly.asStateFlow()
+
+    private val _sortStoresByRating = MutableStateFlow(false)
+    val sortStoresByRating: StateFlow<Boolean> = _sortStoresByRating.asStateFlow()
 
     private val _isMutating = MutableStateFlow(false)
     val isMutating: StateFlow<Boolean> = _isMutating.asStateFlow()
@@ -448,6 +465,98 @@ class HayAlWurudViewModel(
             result.fold(
                 onSuccess = { _snackbarMessage.tryEmit("تم حذف المنتج") },
                 onFailure = { _snackbarMessage.tryEmit("تعذّر حذف المنتج") }
+            )
+        }
+    }
+
+    fun toggleSortStoresByRating() {
+        _sortStoresByRating.value = !_sortStoresByRating.value
+    }
+
+    fun submitStoreReview(
+        store: NeighborhoodStore,
+        serviceQualityRating: Int,
+        offerCredibilityRating: Int,
+        comment: String?
+    ) {
+        viewModelScope.launch {
+            _isMutating.value = true
+            val result = repository.submitStoreReview(
+                store = store,
+                reviewerName = currentUserName,
+                serviceQualityRating = serviceQualityRating,
+                offerCredibilityRating = offerCredibilityRating,
+                comment = comment
+            )
+            _isMutating.value = false
+            result.fold(
+                onSuccess = { _snackbarMessage.tryEmit("شكراً لتقييمك! تم حفظ رأيك حول ${store.name}") },
+                onFailure = { err -> _snackbarMessage.tryEmit(err.message ?: "تعذّر حفظ التقييم") }
+            )
+        }
+    }
+
+    fun deleteStoreReview(storeId: String) {
+        viewModelScope.launch {
+            val result = repository.deleteStoreReview(storeId)
+            result.fold(
+                onSuccess = { _snackbarMessage.tryEmit("تم حذف تقييمك") },
+                onFailure = { _snackbarMessage.tryEmit("تعذّر حذف التقييم") }
+            )
+        }
+    }
+
+    fun submitDeliveryRequest(
+        orderType: DeliveryOrderType,
+        vehicleType: DeliveryVehicleType,
+        pickupLocation: String,
+        orderDetails: String,
+        deliveryZone: DeliveryZone,
+        detailedAddress: String,
+        gpsMapsUrl: String?,
+        customerName: String,
+        customerPhone: String
+    ) {
+        viewModelScope.launch {
+            _isMutating.value = true
+            val result = repository.createDeliveryRequest(
+                orderType = orderType,
+                vehicleType = vehicleType,
+                pickupLocation = pickupLocation,
+                orderDetails = orderDetails,
+                deliveryZone = deliveryZone,
+                detailedAddress = detailedAddress,
+                gpsMapsUrl = gpsMapsUrl,
+                customerName = customerName,
+                customerPhone = customerPhone
+            )
+            _isMutating.value = false
+            result.fold(
+                onSuccess = { _snackbarMessage.tryEmit("تم إرسال طلب التوصيل والنقل السريع بنجاح!") },
+                onFailure = { err -> _snackbarMessage.tryEmit(err.message ?: "تعذّر إرسال طلب التوصيل") }
+            )
+        }
+    }
+
+    fun updateDeliveryStatus(requestId: String, nextStatus: DeliveryStatus) {
+        viewModelScope.launch {
+            val result = repository.updateDeliveryStatus(requestId, nextStatus)
+            result.fold(
+                onSuccess = {
+                    val msg = if (nextStatus == DeliveryStatus.COMPLETED) "تم تأكيد إتمام التوصيل" else "تم إلغاء طلب التوصيل"
+                    _snackbarMessage.tryEmit(msg)
+                },
+                onFailure = { _snackbarMessage.tryEmit("تعذّر تحديث حالة الطلب") }
+            )
+        }
+    }
+
+    fun deleteDeliveryRequest(requestId: String) {
+        viewModelScope.launch {
+            val result = repository.deleteDeliveryRequest(requestId)
+            result.fold(
+                onSuccess = { _snackbarMessage.tryEmit("تم حذف طلب التوصيل") },
+                onFailure = { _snackbarMessage.tryEmit("تعذّر حذف طلب التوصيل") }
             )
         }
     }

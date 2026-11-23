@@ -141,6 +141,36 @@ service cloud.firestore {
              isValidTimestamp(data.updatedAt);
     }
 
+    function isValidStoreReview(data) {
+      return data.storeId is string && isValidId(data.storeId) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.reviewerName is string && data.reviewerName.size() >= 1 && data.reviewerName.size() <= 80 &&
+             data.serviceQualityRating is int && data.serviceQualityRating >= 1 && data.serviceQualityRating <= 5 &&
+             data.offerCredibilityRating is int && data.offerCredibilityRating >= 1 && data.offerCredibilityRating <= 5 &&
+             data.overallRating is number && data.overallRating >= 1 && data.overallRating <= 5 &&
+             (!('comment' in data) || (data.comment is string && data.comment.size() <= 300)) &&
+             data.visibility == 'NEIGHBORHOOD' &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidDeliveryRequest(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.orderType in ['GROCERY', 'RESTAURANT', 'PHARMACY', 'CARGO_FURNITURE', 'SPECIAL_ITEM', 'OTHER'] &&
+             data.vehicleType in ['MOTORCYCLE', 'SEDAN', 'SUZUKI', 'VAN', 'PICKUP', 'TRUCK'] &&
+             data.pickupLocation is string && data.pickupLocation.size() >= 2 && data.pickupLocation.size() <= 160 &&
+             data.orderDetails is string && data.orderDetails.size() >= 2 && data.orderDetails.size() <= 600 &&
+             data.deliveryZone in ['INSIDE_HAY_AL_WURUD', 'QUDSAYA_SUBURB', 'QUDSAYA_TOWN', 'DUMMAR_PROJECT', 'OTHER_DAMASCUS'] &&
+             data.detailedAddress is string && data.detailedAddress.size() >= 2 && data.detailedAddress.size() <= 240 &&
+             (!('gpsMapsUrl' in data) || (data.gpsMapsUrl is string && data.gpsMapsUrl.size() <= 300)) &&
+             data.customerName is string && data.customerName.size() >= 2 && data.customerName.size() <= 80 &&
+             data.customerPhone is string && data.customerPhone.size() >= 4 && data.customerPhone.size() <= 30 &&
+             data.status in ['PENDING', 'COMPLETED', 'CANCELLED'] &&
+             data.visibility == 'NEIGHBORHOOD' &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
     // --- 1. Private Resident Profile & Favorites ---
     match /users/{userId} {
       allow get: if isValidId(userId) && isOwner(userId);
@@ -349,6 +379,73 @@ service cloud.firestore {
                        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'priceText', 'originalPriceText', 'onOffer', 'inStock', 'specsText', 'updatedAt']);
 
       allow delete: if isSignedIn() && isValidId(productId) && existing().userId == request.auth.uid;
+    }
+
+    // --- 7. Neighborhood Store Ratings & Reviews ---
+    match /store_reviews/{reviewId} {
+      allow get: if isSignedIn() && isValidId(reviewId) &&
+                    (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+      allow list: if isSignedIn() &&
+                     (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+
+      allow create: if isSignedIn() &&
+                       isValidId(reviewId) &&
+                       incoming().keys().hasAll(['storeId', 'userId', 'reviewerName', 'serviceQualityRating', 'offerCredibilityRating', 'overallRating', 'visibility', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['storeId', 'userId', 'reviewerName', 'serviceQualityRating', 'offerCredibilityRating', 'overallRating', 'comment', 'visibility', 'createdAt', 'updatedAt']) &&
+                       isValidStoreReview(incoming()) &&
+                       reviewId == incoming().storeId + '_' + request.auth.uid &&
+                       exists(/databases/$(database)/documents/stores/$(incoming().storeId)) &&
+                       get(/databases/$(database)/documents/stores/$(incoming().storeId)).data.userId != request.auth.uid;
+
+      allow update: if isSignedIn() &&
+                       isValidId(reviewId) &&
+                       existing().userId == request.auth.uid &&
+                       isValidStoreReview(incoming()) &&
+                       incoming().storeId == existing().storeId &&
+                       incoming().userId == existing().userId &&
+                       incoming().reviewerName == existing().reviewerName &&
+                       incoming().visibility == existing().visibility &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['serviceQualityRating', 'offerCredibilityRating', 'overallRating', 'comment', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(reviewId) && existing().userId == request.auth.uid;
+    }
+
+    // --- 8. Express Delivery & Transport Requests ---
+    match /delivery_requests/{requestId} {
+      allow get: if isSignedIn() && isValidId(requestId) &&
+                    (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+      allow list: if isSignedIn() &&
+                     (existing().userId == request.auth.uid || existing().visibility == 'NEIGHBORHOOD');
+
+      allow create: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       incoming().keys().hasAll(['userId', 'orderType', 'vehicleType', 'pickupLocation', 'orderDetails', 'deliveryZone', 'detailedAddress', 'customerName', 'customerPhone', 'status', 'visibility', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'orderType', 'vehicleType', 'pickupLocation', 'orderDetails', 'deliveryZone', 'detailedAddress', 'gpsMapsUrl', 'customerName', 'customerPhone', 'status', 'visibility', 'createdAt', 'updatedAt']) &&
+                       isValidDeliveryRequest(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       existing().userId == request.auth.uid &&
+                       existing().status == 'PENDING' &&
+                       isValidDeliveryRequest(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().orderType == existing().orderType &&
+                       incoming().vehicleType == existing().vehicleType &&
+                       incoming().pickupLocation == existing().pickupLocation &&
+                       incoming().orderDetails == existing().orderDetails &&
+                       incoming().deliveryZone == existing().deliveryZone &&
+                       incoming().detailedAddress == existing().detailedAddress &&
+                       incoming().customerName == existing().customerName &&
+                       incoming().customerPhone == existing().customerPhone &&
+                       incoming().visibility == existing().visibility &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().status in ['COMPLETED', 'CANCELLED'] &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(requestId) && existing().userId == request.auth.uid;
     }
   }
 }

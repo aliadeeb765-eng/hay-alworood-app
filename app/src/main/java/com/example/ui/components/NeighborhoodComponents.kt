@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AirportShuttle
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BakeryDining
@@ -34,8 +35,10 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Checkroom
+import androidx.compose.material.icons.filled.Commute
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DirectionsBus
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.ElectricalServices
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FaceRetouchingNatural
@@ -54,6 +57,7 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WifiOff
@@ -79,6 +83,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.CraftFilterCategory
 import com.example.data.model.DamascusEmergencyContacts
+import com.example.data.model.DeliveryVehicleType
 import com.example.data.model.HayAlWurudSectors
 import com.example.data.model.ServiceCategory
 import com.example.data.model.StoreCategory
@@ -103,6 +108,9 @@ fun dialPhoneNumber(context: Context, phone: String) {
     }
     try {
         val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$sanitized"))
+        if (context !is android.app.Activity) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         context.startActivity(intent)
     } catch (_: Exception) {
         Toast.makeText(context, "تعذّر فتح تطبيق الاتصال", Toast.LENGTH_SHORT).show()
@@ -110,7 +118,9 @@ fun dialPhoneNumber(context: Context, phone: String) {
 }
 
 fun openWhatsAppMessage(context: Context, phone: String, message: String) {
-    val digits = phone.filter { it.isDigit() }
+    val digits = phone.mapNotNull { ch ->
+        if (ch.isDigit()) ('0' + ch.digitToInt()) else null
+    }.joinToString("")
     val normalized = when {
         digits.startsWith("09") && digits.length == 10 -> "963${digits.drop(1)}"
         digits.startsWith("00") -> digits.drop(2)
@@ -123,6 +133,9 @@ fun openWhatsAppMessage(context: Context, phone: String, message: String) {
     try {
         val encoded = Uri.encode(message)
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$normalized?text=$encoded"))
+        if (context !is android.app.Activity) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         context.startActivity(intent)
     } catch (_: Exception) {
         dialPhoneNumber(context, phone)
@@ -190,6 +203,15 @@ fun storeCategoryIcon(category: StoreCategory): ImageVector = when (category) {
     StoreCategory.TECH_ACCESSORIES -> Icons.Filled.Computer
     StoreCategory.HOME_GIFTS -> Icons.Filled.CardGiftcard
     StoreCategory.OTHER -> Icons.Filled.Storefront
+}
+
+fun deliveryVehicleIcon(vehicle: DeliveryVehicleType): ImageVector = when (vehicle) {
+    DeliveryVehicleType.MOTORCYCLE -> Icons.Filled.TwoWheeler
+    DeliveryVehicleType.SEDAN -> Icons.Filled.DirectionsCar
+    DeliveryVehicleType.SUZUKI -> Icons.Filled.Commute
+    DeliveryVehicleType.VAN -> Icons.Filled.AirportShuttle
+    DeliveryVehicleType.PICKUP -> Icons.Filled.LocalShipping
+    DeliveryVehicleType.TRUCK -> Icons.Filled.LocalShipping
 }
 
 @Composable

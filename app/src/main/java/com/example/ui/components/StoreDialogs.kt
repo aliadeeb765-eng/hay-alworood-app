@@ -2,9 +2,8 @@ package com.example.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,13 +14,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -30,16 +35,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.model.NeighborhoodStore
 import com.example.data.model.StoreCategory
+import com.example.data.model.StoreReview
+import com.example.data.model.formatRatingScore
+import com.example.ui.theme.DamaskGold
+import com.example.ui.theme.DamaskGoldContainer
+import com.example.ui.theme.OnDamaskGoldContainer
 
 @Composable
 fun InAppModalDialog(
@@ -55,11 +68,9 @@ fun InAppModalDialog(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onDismiss
-            )
+            .pointerInput(onDismiss) {
+                detectTapGestures(onTap = { onDismiss() })
+            }
             .padding(horizontal = 20.dp, vertical = 24.dp)
             .imePadding(),
         contentAlignment = Alignment.Center
@@ -69,11 +80,9 @@ fun InAppModalDialog(
                 .widthIn(max = 520.dp)
                 .fillMaxWidth()
                 .heightIn(max = 640.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {}
-                ),
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = {})
+                },
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 6.dp,
@@ -104,7 +113,7 @@ fun InAppModalDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     dismissButton()
-                    Spacer(Modifier.widthIn(min = 8.dp))
+                    Spacer(Modifier.width(8.dp))
                     confirmButton()
                 }
             }
@@ -391,6 +400,174 @@ fun AddStoreProductDialog(
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun RateStoreDialog(
+    store: NeighborhoodStore,
+    existingReview: StoreReview?,
+    onDismiss: () -> Unit,
+    onSubmit: (
+        serviceQualityRating: Int,
+        offerCredibilityRating: Int,
+        comment: String?
+    ) -> Unit
+) {
+    var serviceQuality by remember(existingReview) {
+        mutableIntStateOf(existingReview?.serviceQualityRating?.coerceIn(1, 5) ?: 5)
+    }
+    var offerCredibility by remember(existingReview) {
+        mutableIntStateOf(existingReview?.offerCredibilityRating?.coerceIn(1, 5) ?: 5)
+    }
+    var comment by remember(existingReview) {
+        mutableStateOf(existingReview?.comment.orEmpty())
+    }
+    val average = (serviceQuality + offerCredibility) / 2.0
+
+    InAppModalDialog(
+        title = if (existingReview != null) "تعديل تقييم ${store.name}" else "تقييم ${store.name}",
+        onDismiss = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSubmit(serviceQuality, offerCredibility, comment)
+                    onDismiss()
+                },
+                modifier = Modifier.testTag("submit_review_button")
+            ) {
+                Text(if (existingReview != null) "حفظ التعديل" else "إرسال التقييم")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("cancel_review_button")
+            ) {
+                Text("إلغاء")
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("rate_store_dialog"),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                color = DamaskGoldContainer,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "التقييم الإجمالي المتوقع",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = OnDamaskGoldContainer,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "★ ${formatRatingScore(average)} / 5",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = OnDamaskGoldContainer,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            StarRatingInputRow(
+                label = "جودة الخدمة والتعامل",
+                rating = serviceQuality,
+                descriptor = when (serviceQuality) {
+                    1 -> "ضعيف"
+                    2 -> "مقبول"
+                    3 -> "جيد"
+                    4 -> "جيد جداً"
+                    else -> "ممتاز"
+                },
+                tagPrefix = "quality",
+                onSelect = { serviceQuality = it }
+            )
+
+            StarRatingInputRow(
+                label = "مصداقية العروض والأسعار",
+                rating = offerCredibility,
+                descriptor = when (offerCredibility) {
+                    1 -> "غير مطابقة"
+                    2 -> "تحتاج مراجعة"
+                    3 -> "مقبولة"
+                    4 -> "صادقة"
+                    else -> "موثوقة تماماً"
+                },
+                tagPrefix = "credibility",
+                onSelect = { offerCredibility = it }
+            )
+
+            OutlinedTextField(
+                value = comment,
+                onValueChange = { if (it.length <= 300) comment = it },
+                label = { Text("ملاحظاتك لأهالي الحي (اختياري)") },
+                placeholder = { Text("هل التعامل جيد؟ وهل أسعار العروض حقيقية كما في التطبيق؟") },
+                maxLines = 3,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("review_comment_input")
+            )
+        }
+    }
+}
+
+@Composable
+private fun StarRatingInputRow(
+    label: String,
+    rating: Int,
+    descriptor: String,
+    tagPrefix: String,
+    onSelect: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = descriptor,
+                style = MaterialTheme.typography.labelMedium,
+                color = DamaskGold,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            (1..5).forEach { star ->
+                val filled = star <= rating
+                IconButton(
+                    onClick = { onSelect(star) },
+                    modifier = Modifier.testTag("${tagPrefix}_star_$star")
+                ) {
+                    Icon(
+                        imageVector = if (filled) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                        contentDescription = "$label: $star من 5 نجوم",
+                        tint = if (filled) DamaskGold else MaterialTheme.colorScheme.outline
+                    )
+                }
             }
         }
     }

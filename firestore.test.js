@@ -497,3 +497,219 @@ test("Stores & store products: owner registration, parent gate, partial updates,
   await assertSucceeds(aliceDb.collection("stores").doc("store_1").delete());
 });
 
+// 8. Store reviews: one-per-resident deterministic ID, anti-self-rating, bounds (1..5), partial updates
+test("Store reviews: deterministic review ID, anti-self-rating, bounds, and owner-only edit/delete enforced", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const now = new Date(Date.now() - 3000);
+
+  // Unauthenticated reads fail
+  await assertFails(
+    unauthDb.collection("store_reviews").where("visibility", "==", "NEIGHBORHOOD").get()
+  );
+
+  // Alice creates a store
+  await assertSucceeds(
+    aliceDb.collection("stores").doc("store_rate_1").set({
+      userId: ALICE_UID,
+      ownerName: "أبو سامر",
+      name: "مكتبة الهدى",
+      category: "STATIONERY",
+      sector: "شارع المدارس",
+      phone: "0933123456",
+      storeOpen: true,
+      visibility: "NEIGHBORHOOD",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Store owner Alice cannot rate her own store
+  await assertFails(
+    aliceDb.collection("store_reviews").doc(`store_rate_1_${ALICE_UID}`).set({
+      storeId: "store_rate_1",
+      userId: ALICE_UID,
+      reviewerName: "أبو سامر",
+      serviceQualityRating: 5,
+      offerCredibilityRating: 5,
+      overallRating: 5.0,
+      comment: "أفضل متجر!",
+      visibility: "NEIGHBORHOOD",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Neighbor Bob submits a valid review with deterministic ID store_rate_1_bob_resident_2
+  const bobReviewId = `store_rate_1_${BOB_UID}`;
+  await assertSucceeds(
+    bobDb.collection("store_reviews").doc(bobReviewId).set({
+      storeId: "store_rate_1",
+      userId: BOB_UID,
+      reviewerName: "أبو علي",
+      serviceQualityRating: 5,
+      offerCredibilityRating: 4,
+      overallRating: 4.5,
+      comment: "تعامل ممتاز وأسعار العروض مطابقة تماماً للإعلان.",
+      visibility: "NEIGHBORHOOD",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Filtered neighborhood query succeeds; unfiltered fails
+  await assertSucceeds(
+    aliceDb.collection("store_reviews").where("visibility", "==", "NEIGHBORHOOD").get()
+  );
+  await assertFails(aliceDb.collection("store_reviews").get());
+
+  // Arbitrary doc ID (duplicate rating bypass) fails
+  await assertFails(
+    bobDb.collection("store_reviews").doc("arbitrary_review_id").set({
+      storeId: "store_rate_1",
+      userId: BOB_UID,
+      reviewerName: "أبو علي",
+      serviceQualityRating: 5,
+      offerCredibilityRating: 5,
+      overallRating: 5.0,
+      visibility: "NEIGHBORHOOD",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Rating out of bounds (0 or 6) fails
+  await assertFails(
+    bobDb.collection("store_reviews").doc(bobReviewId).update({
+      serviceQualityRating: 6,
+      overallRating: 5.0,
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Orphaned storeId fails
+  await assertFails(
+    bobDb.collection("store_reviews").doc(`missing_store_${BOB_UID}`).set({
+      storeId: "missing_store",
+      userId: BOB_UID,
+      reviewerName: "أبو علي",
+      serviceQualityRating: 4,
+      offerCredibilityRating: 4,
+      overallRating: 4.0,
+      visibility: "NEIGHBORHOOD",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Bob updates his own review ratings and comment
+  await assertSucceeds(
+    bobDb.collection("store_reviews").doc(bobReviewId).update({
+      serviceQualityRating: 5,
+      offerCredibilityRating: 5,
+      overallRating: 5.0,
+      comment: "تم الشراء مرة ثانية، مصداقية عالية جداً.",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Alice cannot edit or delete Bob's review
+  await assertFails(
+    aliceDb.collection("store_reviews").doc(bobReviewId).update({
+      serviceQualityRating: 1,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+  await assertFails(aliceDb.collection("store_reviews").doc(bobReviewId).delete());
+
+  // Bob can delete his own review
+  await assertSucceeds(bobDb.collection("store_reviews").doc(bobReviewId).delete());
+});
+
+// 9. Delivery requests: create PENDING, filtered query, status transition lock, owner-only mutation/delete
+test("Delivery requests: create PENDING, filtered query, status lock, and cross-user protection enforced", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const now = new Date(Date.now() - 3000);
+
+  // Unauthenticated reads fail
+  await assertFails(
+    unauthDb.collection("delivery_requests").where("visibility", "==", "NEIGHBORHOOD").get()
+  );
+
+  // Alice creates a delivery request with GPS URL
+  await assertSucceeds(
+    aliceDb.collection("delivery_requests").doc("del_1").set({
+      userId: ALICE_UID,
+      orderType: "PHARMACY",
+      vehicleType: "MOTORCYCLE",
+      pickupLocation: "صيدلية الورود المناوبة",
+      orderDetails: "شراب سعال وفيتامين سي عدد 2",
+      deliveryZone: "INSIDE_HAY_AL_WURUD",
+      detailedAddress: "شارع المدارس، بناء 14، طابق 2",
+      gpsMapsUrl: "https://maps.google.com/?q=33.532100,36.245100",
+      customerName: "أبو محمد",
+      customerPhone: "0933445566",
+      status: "PENDING",
+      visibility: "NEIGHBORHOOD",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Filtered query succeeds for neighbor Bob; unfiltered fails
+  await assertSucceeds(
+    bobDb.collection("delivery_requests").where("visibility", "==", "NEIGHBORHOOD").get()
+  );
+  await assertFails(bobDb.collection("delivery_requests").get());
+
+  // Creating a request already COMPLETED fails
+  await assertFails(
+    aliceDb.collection("delivery_requests").doc("del_bad_status").set({
+      userId: ALICE_UID,
+      orderType: "GROCERY",
+      vehicleType: "SEDAN",
+      pickupLocation: "سمانة البركة",
+      orderDetails: "أغراض منزلية",
+      deliveryZone: "QUDSAYA_SUBURB",
+      detailedAddress: "الجزيرة السابعة",
+      customerName: "أبو محمد",
+      customerPhone: "0933445566",
+      status: "COMPLETED",
+      visibility: "NEIGHBORHOOD",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Bob cannot modify or delete Alice's delivery request
+  await assertFails(
+    bobDb.collection("delivery_requests").doc("del_1").update({
+      status: "CANCELLED",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+  await assertFails(bobDb.collection("delivery_requests").doc("del_1").delete());
+
+  // Alice marks her delivery request as COMPLETED
+  await assertSucceeds(
+    aliceDb.collection("delivery_requests").doc("del_1").update({
+      status: "COMPLETED",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Terminal state lock: once COMPLETED, further updates fail
+  await assertFails(
+    aliceDb.collection("delivery_requests").doc("del_1").update({
+      status: "CANCELLED",
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Alice can delete her delivery request
+  await assertSucceeds(aliceDb.collection("delivery_requests").doc("del_1").delete());
+});
+

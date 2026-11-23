@@ -25,14 +25,18 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -59,6 +63,10 @@ import androidx.compose.ui.unit.dp
 import com.example.data.model.NeighborhoodStore
 import com.example.data.model.StoreCategory
 import com.example.data.model.StoreProduct
+import com.example.data.model.StoreRatingSummary
+import com.example.data.model.StoreReview
+import com.example.data.model.computeStoreRatingSummaries
+import com.example.data.model.formatRatingScore
 import com.example.ui.components.SectorFilterChips
 import com.example.ui.components.storeCategoryIcon
 import com.example.ui.state.UiState
@@ -75,26 +83,36 @@ fun StoresScreen(
     currentUserId: String,
     storesState: UiState<List<NeighborhoodStore>>,
     storeProductsState: UiState<List<StoreProduct>>,
+    storeReviewsState: UiState<List<StoreReview>>,
     searchQuery: String,
     selectedCategory: StoreCategory?,
     selectedSector: String?,
     showOffersOnly: Boolean,
+    sortByRating: Boolean,
     onSearchQueryChange: (String) -> Unit,
     onSelectCategory: (StoreCategory?) -> Unit,
     onSelectSector: (String?) -> Unit,
     onToggleOffersOnly: () -> Unit,
+    onToggleSortByRating: () -> Unit,
     onOpenRegisterStore: () -> Unit,
     onOpenAddProduct: (NeighborhoodStore) -> Unit,
+    onOpenRateStore: (NeighborhoodStore, StoreReview?) -> Unit,
+    onDeleteStoreReview: (String) -> Unit,
     onToggleStoreOpen: (String, Boolean) -> Unit,
     onDeleteStore: (String) -> Unit,
     onToggleProductOfferAndStock: (String, Boolean, Boolean) -> Unit,
     onDeleteProduct: (String) -> Unit,
+    onOrderDeliveryFromStore: (NeighborhoodStore) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var activeStoreId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val allStores = (storesState as? UiState.Success)?.data.orEmpty()
     val allProducts = (storeProductsState as? UiState.Success)?.data.orEmpty()
+    val allReviews = (storeReviewsState as? UiState.Success)?.data.orEmpty()
+    val ratingSummaries = remember(allReviews, currentUserId) {
+        computeStoreRatingSummaries(allReviews, currentUserId)
+    }
     val selectedStore = remember(allStores, activeStoreId) {
         allStores.firstOrNull { it.id == activeStoreId }
     }
@@ -103,16 +121,25 @@ fun StoresScreen(
         val storeProducts = remember(allProducts, selectedStore.id) {
             allProducts.filter { it.storeId == selectedStore.id }
         }
+        val storeReviews = remember(allReviews, selectedStore.id) {
+            allReviews.filter { it.storeId == selectedStore.id }
+        }
+        val storeSummary = ratingSummaries[selectedStore.id]
         StoreDetailView(
             store = selectedStore,
             products = storeProducts,
+            reviews = storeReviews,
+            ratingSummary = storeSummary,
             currentUserId = currentUserId,
             onBack = { activeStoreId = null },
             onAddProductClick = { onOpenAddProduct(selectedStore) },
+            onRateStoreClick = { onOpenRateStore(selectedStore, storeSummary?.myReview) },
+            onDeleteMyReview = { onDeleteStoreReview(selectedStore.id) },
             onToggleStoreOpen = onToggleStoreOpen,
             onDeleteStore = onDeleteStore,
             onToggleProductOfferAndStock = onToggleProductOfferAndStock,
             onDeleteProduct = onDeleteProduct,
+            onOrderDeliveryClick = { onOrderDeliveryFromStore(selectedStore) },
             modifier = modifier
         )
         return
@@ -170,6 +197,44 @@ fun StoresScreen(
                             text = "أسواق ومتاجر الحي",
                             style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Text(
+                                text = "${allStores.size} متجر",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilterChip(
+                            selected = sortByRating,
+                            onClick = onToggleSortByRating,
+                            label = { Text("الأعلى تقييماً") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Star,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            modifier = Modifier.testTag("stores_sort_rating_chip"),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = DamaskGoldContainer,
+                                selectedLabelColor = OnDamaskGoldContainer
+                            )
                         )
                         FilterChip(
                             selected = showOffersOnly,
@@ -344,7 +409,7 @@ fun StoresScreen(
                         }
                     }
                     is UiState.Success -> {
-                        val filteredStores = allStores.filter { store ->
+                        val baseFiltered = allStores.filter { store ->
                             val matchesCat = selectedCategory == null || store.parsedCategory == selectedCategory
                             val matchesSec = selectedSector == null || store.sector == selectedSector
                             val storeProds = productsByStore[store.id].orEmpty()
@@ -355,6 +420,17 @@ fun StoresScreen(
                                 (store.description?.contains(q, ignoreCase = true) == true) ||
                                 storeProds.any { it.title.contains(q, ignoreCase = true) }
                             matchesCat && matchesSec && matchesOffer && matchesQuery
+                        }
+                        val filteredStores = if (sortByRating) {
+                            baseFiltered.sortedWith(
+                                compareByDescending<NeighborhoodStore> {
+                                    ratingSummaries[it.id]?.overallAverage ?: 0.0
+                                }.thenByDescending {
+                                    ratingSummaries[it.id]?.reviewCount ?: 0
+                                }
+                            )
+                        } else {
+                            baseFiltered
                         }
 
                         if (filteredStores.isEmpty()) {
@@ -394,8 +470,10 @@ fun StoresScreen(
                                     store = store,
                                     productCount = storeProds.size,
                                     offerCount = activeOfferCount,
+                                    ratingSummary = ratingSummaries[store.id],
                                     isOwnedByMe = store.userId == currentUserId,
                                     onClick = { activeStoreId = store.id },
+                                    onOrderDeliveryClick = { onOrderDeliveryFromStore(store) },
                                     modifier = Modifier.padding(horizontal = 16.dp)
                                 )
                             }
@@ -494,8 +572,10 @@ private fun StoreDirectoryCard(
     store: NeighborhoodStore,
     productCount: Int,
     offerCount: Int,
+    ratingSummary: StoreRatingSummary?,
     isOwnedByMe: Boolean,
     onClick: () -> Unit,
+    onOrderDeliveryClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val category = store.parsedCategory
@@ -604,6 +684,71 @@ private fun StoreDirectoryCard(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (ratingSummary != null && ratingSummary.reviewCount > 0) {
+                            Surface(
+                                color = DamaskGoldContainer,
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier.testTag("store_card_rating_${store.id}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Star,
+                                        contentDescription = null,
+                                        tint = DamaskGold,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "${formatRatingScore(ratingSummary.overallAverage)} (${ratingSummary.reviewCount} تقييم)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = OnDamaskGoldContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            if (ratingSummary.offerCredibilityAverage >= 4.5) {
+                                Surface(
+                                    color = StatusAvailableBg,
+                                    shape = RoundedCornerShape(50)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Verified,
+                                            contentDescription = null,
+                                            tint = StatusAvailableGreen,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Text(
+                                            text = "عروض موثوقة",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = StatusAvailableGreen,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "★ جديد • بانتظار أول تقييم",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("store_card_rating_${store.id}")
+                            )
+                        }
+                    }
                 }
             }
 
@@ -676,6 +821,24 @@ private fun StoreDirectoryCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            FilledTonalButton(
+                onClick = onOrderDeliveryClick,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("order_delivery_store_${store.id}")
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.LocalShipping,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("اطلب توصيل من هذا المحل", fontWeight = FontWeight.Bold)
             }
         }
     }

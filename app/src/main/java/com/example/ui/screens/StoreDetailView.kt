@@ -25,8 +25,13 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,6 +40,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -51,9 +57,13 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.example.data.model.NeighborhoodStore
 import com.example.data.model.StoreProduct
+import com.example.data.model.StoreRatingSummary
+import com.example.data.model.StoreReview
+import com.example.data.model.formatRatingScore
 import com.example.ui.components.dialPhoneNumber
 import com.example.ui.components.openWhatsAppMessage
 import com.example.ui.components.storeCategoryIcon
+import com.example.ui.theme.DamaskGold
 import com.example.ui.theme.DamaskGoldContainer
 import com.example.ui.theme.OnDamaskGoldContainer
 import com.example.ui.theme.StatusAvailableBg
@@ -65,13 +75,18 @@ import com.example.ui.theme.StatusCutRed
 fun StoreDetailView(
     store: NeighborhoodStore,
     products: List<StoreProduct>,
+    reviews: List<StoreReview>,
+    ratingSummary: StoreRatingSummary?,
     currentUserId: String,
     onBack: () -> Unit,
     onAddProductClick: () -> Unit,
+    onRateStoreClick: () -> Unit,
+    onDeleteMyReview: () -> Unit,
     onToggleStoreOpen: (String, Boolean) -> Unit,
     onDeleteStore: (String) -> Unit,
     onToggleProductOfferAndStock: (String, Boolean, Boolean) -> Unit,
     onDeleteProduct: (String) -> Unit,
+    onOrderDeliveryClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BackHandler { onBack() }
@@ -100,7 +115,8 @@ fun StoreDetailView(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .testTag("store_detail_lazy_column"),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -295,8 +311,34 @@ fun StoreDetailView(
                                 Text("واتساب")
                             }
                         }
+
+                        Spacer(Modifier.height(10.dp))
+                        FilledTonalButton(
+                            onClick = onOrderDeliveryClick,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("order_delivery_detail_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.LocalShipping,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("اطلب توصيل من هذا المحل", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
+            }
+
+            item {
+                StoreRatingSummaryCard(
+                    ratingSummary = ratingSummary,
+                    isOwner = isOwner,
+                    onRateStoreClick = onRateStoreClick
+                )
             }
 
             item {
@@ -360,6 +402,348 @@ fun StoreDetailView(
                         onDelete = { onDeleteProduct(product.id) }
                     )
                 }
+            }
+
+            item {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "تقييمات وآراء أهالي الحي (${reviews.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (reviews.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.RateReview,
+                                contentDescription = null,
+                                tint = DamaskGold,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Text(
+                                text = "لا توجد تقييمات بعد لهذا المتجر. شارك جيرانك تجربتك حول جودة الخدمة ومصداقية العروض.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(reviews, key = { it.id }) { review ->
+                    StoreReviewCard(
+                        review = review,
+                        isMine = review.userId == currentUserId,
+                        onDeleteClick = onDeleteMyReview
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StoreRatingSummaryCard(
+    ratingSummary: StoreRatingSummary?,
+    isOwner: Boolean,
+    onRateStoreClick: () -> Unit
+) {
+    val count = ratingSummary?.reviewCount ?: 0
+    val overall = ratingSummary?.overallAverage ?: 0.0
+    val quality = ratingSummary?.serviceQualityAverage ?: 0.0
+    val credibility = ratingSummary?.offerCredibilityAverage ?: 0.0
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("store_rating_summary_card"),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+        ),
+        border = BorderStroke(1.dp, DamaskGold.copy(alpha = 0.55f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "تقييم أهالي الحي",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (count > 0) "بناءً على $count تقييم" else "بانتظار أول تقييم من الجيران",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Surface(
+                    color = DamaskGoldContainer,
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Star,
+                            contentDescription = null,
+                            tint = DamaskGold,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text(
+                            text = if (count > 0) formatRatingScore(overall) else "—",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = OnDamaskGoldContainer,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            if (count > 0) {
+                RatingBreakdownBar(
+                    label = "جودة الخدمة والتعامل",
+                    score = quality
+                )
+                RatingBreakdownBar(
+                    label = "مصداقية العروض والأسعار",
+                    score = credibility
+                )
+            }
+
+            if (!isOwner) {
+                Button(
+                    onClick = onRateStoreClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("rate_store_button"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = if (ratingSummary?.myReview != null) Icons.Filled.RateReview else Icons.Filled.Star,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (ratingSummary?.myReview != null) {
+                            "تعديل تقييمك للمتجر"
+                        } else {
+                            "قيّم جودة الخدمة ومصداقية العروض"
+                        }
+                    )
+                }
+            } else {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "أنت صاحب هذا المتجر — يمكنك متابعة تقييمات الزبائن ومؤشر مصداقية العروض هنا.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RatingBreakdownBar(
+    label: String,
+    score: Double
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text(
+                text = "${formatRatingScore(score)} / 5",
+                style = MaterialTheme.typography.labelMedium,
+                color = DamaskGold,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        LinearProgressIndicator(
+            progress = { (score / 5.0).toFloat().coerceIn(0f, 1f) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(7.dp),
+            color = DamaskGold,
+            trackColor = DamaskGoldContainer.copy(alpha = 0.65f)
+        )
+    }
+}
+
+@Composable
+private fun StoreReviewCard(
+    review: StoreReview,
+    isMine: Boolean,
+    onDeleteClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("store_review_card_${review.id}"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (isMine) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = review.reviewerName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (isMine) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Text(
+                                text = "تقييمك",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = DamaskGoldContainer,
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Star,
+                                contentDescription = null,
+                                tint = DamaskGold,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = formatRatingScore(review.overallRating),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = OnDamaskGoldContainer,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    if (isMine) {
+                        IconButton(
+                            onClick = onDeleteClick,
+                            modifier = Modifier.testTag("delete_review_button_${review.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DeleteOutline,
+                                contentDescription = "حذف التقييم",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "جودة الخدمة: ${review.serviceQualityRating}/5",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+                Surface(
+                    color = if (review.offerCredibilityRating >= 4) StatusAvailableBg else MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (review.offerCredibilityRating >= 4) {
+                            Icon(
+                                imageVector = Icons.Filled.Verified,
+                                contentDescription = null,
+                                tint = StatusAvailableGreen,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                        Text(
+                            text = "مصداقية العروض: ${review.offerCredibilityRating}/5",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (review.offerCredibilityRating >= 4) StatusAvailableGreen else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            review.comment?.takeIf { it.isNotBlank() }?.let { commentText ->
+                Text(
+                    text = commentText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
         }
     }

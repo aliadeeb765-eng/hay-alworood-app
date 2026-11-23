@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
@@ -71,6 +72,7 @@ import com.example.data.model.ServiceAvailability
 import com.example.data.model.ServiceCategory
 import com.example.data.model.ServiceProvider
 import com.example.data.model.ServiceRecommendation
+import com.example.data.model.supportsStoreDelivery
 import com.example.ui.components.CraftCategoryFilterChipGroup
 import com.example.ui.components.SectorFilterChips
 import com.example.ui.components.StarterNeighborhoodBanner
@@ -106,6 +108,7 @@ fun ServicesScreen(
     onDeleteService: (String) -> Unit,
     onOpenAddService: () -> Unit,
     onLoadStarterData: () -> Unit,
+    onOrderDeliveryFromService: (ServiceProvider) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -191,7 +194,8 @@ fun ServicesScreen(
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .testTag("services_lazy_column"),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -312,7 +316,8 @@ fun ServicesScreen(
                                     onCallClick = { dialPhoneNumber(context, service.workPhone) },
                                     onToggleFavorite = { onToggleFavorite(service, isFav) },
                                     onToggleRecommend = { onToggleRecommend(service, isRec) },
-                                    onDeleteClick = { onDeleteService(service.id) }
+                                    onDeleteClick = { onDeleteService(service.id) },
+                                    onOrderDeliveryClick = { onOrderDeliveryFromService(service) }
                                 )
                             }
                         }
@@ -334,7 +339,8 @@ private fun ServiceProviderCard(
     onCallClick: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleRecommend: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onOrderDeliveryClick: () -> Unit
 ) {
     val category = service.parsedCategory
     val resolvedCraft = CraftFilterCategory.resolveCraftCategory(
@@ -593,6 +599,26 @@ private fun ServiceProviderCard(
                         contentDescription = if (isFavorited) "إزالة من المحفوظات" else "حفظ الرقم",
                         tint = if (isFavorited) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+
+            if (service.supportsStoreDelivery()) {
+                Spacer(Modifier.height(10.dp))
+                FilledTonalButton(
+                    onClick = onOrderDeliveryClick,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("order_delivery_service_${service.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.LocalShipping,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("اطلب توصيل من هذا المحل", fontWeight = FontWeight.Bold)
                 }
             }
         }

@@ -410,6 +410,128 @@
         }
       },
       "required": ["storeId", "userId", "storeName", "storeCategory", "storeSector", "storePhone", "title", "priceText", "onOffer", "inStock", "visibility", "createdAt", "updatedAt"]
+    },
+    "StoreReview": {
+      "title": "StoreReview",
+      "description": "One-per-resident rating and review for a neighborhood store covering service quality and offer credibility.",
+      "type": "object",
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "description": "Referenced NeighborhoodStore document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reviewing resident Firebase Auth UID."
+        },
+        "reviewerName": {
+          "type": "string",
+          "description": "Display name of the reviewing resident."
+        },
+        "serviceQualityRating": {
+          "type": "integer",
+          "description": "Star rating (1-5) for service quality and customer treatment."
+        },
+        "offerCredibilityRating": {
+          "type": "integer",
+          "description": "Star rating (1-5) for credibility of offers and pricing accuracy."
+        },
+        "overallRating": {
+          "type": "number",
+          "description": "Average star rating computed from service quality and offer credibility (1.0-5.0)."
+        },
+        "comment": {
+          "type": "string",
+          "description": "Optional written feedback from the resident."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["NEIGHBORHOOD"],
+          "description": "Shared neighborhood scope."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["storeId", "userId", "reviewerName", "serviceQualityRating", "offerCredibilityRating", "overallRating", "visibility", "createdAt", "updatedAt"]
+    },
+    "DeliveryRequest": {
+      "title": "DeliveryRequest",
+      "description": "Express neighborhood and Damascus delivery or cargo transport order submitted by a resident.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Ordering resident Firebase Auth UID."
+        },
+        "orderType": {
+          "type": "string",
+          "enum": ["GROCERY", "RESTAURANT", "PHARMACY", "CARGO_FURNITURE", "SPECIAL_ITEM", "OTHER"],
+          "description": "Quick order type category."
+        },
+        "vehicleType": {
+          "type": "string",
+          "enum": ["MOTORCYCLE", "SEDAN", "SUZUKI", "VAN", "PICKUP", "TRUCK"],
+          "description": "Requested vehicle type."
+        },
+        "pickupLocation": {
+          "type": "string",
+          "description": "Store name or pickup address."
+        },
+        "orderDetails": {
+          "type": "string",
+          "description": "Multi-line description of items or cargo."
+        },
+        "deliveryZone": {
+          "type": "string",
+          "enum": ["INSIDE_HAY_AL_WURUD", "QUDSAYA_SUBURB", "QUDSAYA_TOWN", "DUMMAR_PROJECT", "OTHER_DAMASCUS"],
+          "description": "Target delivery area."
+        },
+        "detailedAddress": {
+          "type": "string",
+          "description": "Detailed street/building address for delivery."
+        },
+        "gpsMapsUrl": {
+          "type": "string",
+          "description": "Optional Google Maps URL fetched via GPS."
+        },
+        "customerName": {
+          "type": "string",
+          "description": "Customer display name."
+        },
+        "customerPhone": {
+          "type": "string",
+          "description": "Customer contact phone number."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "COMPLETED", "CANCELLED"],
+          "description": "Delivery order lifecycle status."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["NEIGHBORHOOD"],
+          "description": "Shared neighborhood scope."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["userId", "orderType", "vehicleType", "pickupLocation", "orderDetails", "deliveryZone", "detailedAddress", "customerName", "customerPhone", "status", "visibility", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -444,6 +566,14 @@
     "/store_products/{productId}": {
       "schema": { "$ref": "#/entities/StoreProduct" },
       "description": "Products and special offers published by registered store owners."
+    },
+    "/store_reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/StoreReview" },
+      "description": "Resident star ratings and reviews for neighborhood stores."
+    },
+    "/delivery_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/DeliveryRequest" },
+      "description": "Express delivery and cargo transport orders within Hay Al-Wurud and nearby Damascus zones."
     }
   }
 }

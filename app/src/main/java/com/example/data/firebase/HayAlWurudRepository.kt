@@ -3,6 +3,11 @@ package com.example.data.firebase
 import android.content.Context
 import com.example.R
 import com.example.data.model.CommunityPost
+import com.example.data.model.DeliveryOrderType
+import com.example.data.model.DeliveryRequest
+import com.example.data.model.DeliveryStatus
+import com.example.data.model.DeliveryVehicleType
+import com.example.data.model.DeliveryZone
 import com.example.data.model.FavoriteService
 import com.example.data.model.HayAlWurudSectors
 import com.example.data.model.NeighborhoodStore
@@ -14,6 +19,7 @@ import com.example.data.model.ServiceProvider
 import com.example.data.model.ServiceRecommendation
 import com.example.data.model.StoreCategory
 import com.example.data.model.StoreProduct
+import com.example.data.model.StoreReview
 import com.example.data.model.UtilityStatus
 import com.example.data.model.UtilityType
 import com.example.data.model.UtilityUpdate
@@ -737,6 +743,211 @@ class HayAlWurudRepository(
             requireUserId()
             require(productId.isNotBlank())
             db.collection("store_products").document(productId).delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    // --- Store Ratings & Reviews ---
+    fun observeStoreReviews(): Flow<List<StoreReview>> = flow {
+        val uid = requireUserId()
+        val path = "store_reviews"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("visibility", "NEIGHBORHOOD")
+                .snapshots(MetadataChanges.INCLUDE)
+                .map { snapshot ->
+                    updatePendingState("store_reviews", snapshot.metadata.hasPendingWrites())
+                    snapshot.toObjects(StoreReview::class.java, ServerTimestampBehavior.ESTIMATE)
+                        .sortedByDescending { it.updatedAt?.seconds ?: it.createdAt?.seconds ?: 0L }
+                }
+                .logFirestoreErrors(OperationType.LIST, path, uid)
+        )
+    }
+
+    suspend fun submitStoreReview(
+        store: NeighborhoodStore,
+        reviewerName: String,
+        serviceQualityRating: Int,
+        offerCredibilityRating: Int,
+        comment: String?
+    ): Result<Unit> {
+        val uid = auth.currentUser?.uid
+        val previewId = "${store.id}_${uid ?: "unauthenticated"}"
+        var docPath = "store_reviews/$previewId"
+        return try {
+            val verifiedUid = requireUserId()
+            require(store.id.isNotBlank()) { "معرّف المحل غير صالح" }
+            require(store.userId != verifiedUid) { "لا يمكنك تقييم متجرك الخاص" }
+            val safeQuality = serviceQualityRating.coerceIn(1, 5)
+            val safeCredibility = offerCredibilityRating.coerceIn(1, 5)
+            val overall = (safeQuality + safeCredibility) / 2.0
+            val safeReviewer = reviewerName.trim().ifBlank { "أحد الجيران" }.take(80)
+            val safeComment = comment?.trim()?.takeIf { it.isNotBlank() }?.take(300)
+
+            val reviewId = "${store.id}_$verifiedUid"
+            val docRef = db.collection("store_reviews").document(reviewId)
+            docPath = docRef.path
+            val existing = docRef.get().await()
+            if (existing.exists()) {
+                val updatePayload = mutableMapOf<String, Any>(
+                    "serviceQualityRating" to safeQuality,
+                    "offerCredibilityRating" to safeCredibility,
+                    "overallRating" to overall,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                if (safeComment != null) {
+                    updatePayload["comment"] = safeComment
+                } else if (existing.contains("comment")) {
+                    updatePayload["comment"] = FieldValue.delete()
+                }
+                docRef.update(updatePayload).await()
+            } else {
+                val createPayload = mapOf(
+                    "storeId" to store.id,
+                    "userId" to verifiedUid,
+                    "reviewerName" to safeReviewer,
+                    "serviceQualityRating" to safeQuality,
+                    "offerCredibilityRating" to safeCredibility,
+                    "overallRating" to overall,
+                    "comment" to safeComment,
+                    "visibility" to "NEIGHBORHOOD",
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ).filterValues { it != null }
+                docRef.set(createPayload).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteStoreReview(storeId: String): Result<Unit> {
+        val uid = auth.currentUser?.uid
+        val previewId = "${storeId}_${uid ?: "unauthenticated"}"
+        val docPath = "store_reviews/$previewId"
+        return try {
+            val verifiedUid = requireUserId()
+            require(storeId.isNotBlank())
+            db.collection("store_reviews").document("${storeId}_$verifiedUid").delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    // --- Express Delivery & Transport Requests ---
+    fun observeDeliveryRequests(): Flow<List<DeliveryRequest>> = flow {
+        val uid = requireUserId()
+        val path = "delivery_requests"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("visibility", "NEIGHBORHOOD")
+                .snapshots(MetadataChanges.INCLUDE)
+                .map { snapshot ->
+                    updatePendingState("delivery_requests", snapshot.metadata.hasPendingWrites())
+                    snapshot.toObjects(DeliveryRequest::class.java, ServerTimestampBehavior.ESTIMATE)
+                        .sortedByDescending { it.createdAt?.seconds ?: 0L }
+                }
+                .logFirestoreErrors(OperationType.LIST, path, uid)
+        )
+    }
+
+    suspend fun createDeliveryRequest(
+        orderType: DeliveryOrderType,
+        vehicleType: DeliveryVehicleType,
+        pickupLocation: String,
+        orderDetails: String,
+        deliveryZone: DeliveryZone,
+        detailedAddress: String,
+        gpsMapsUrl: String?,
+        customerName: String,
+        customerPhone: String
+    ): Result<Unit> {
+        var docPath = "delivery_requests"
+        return try {
+            val uid = requireUserId()
+            val safePickup = pickupLocation.trim().take(160)
+            val safeDetails = orderDetails.trim().take(600)
+            val safeGpsUrl = gpsMapsUrl?.trim()?.takeIf { it.isNotBlank() }?.take(300)
+            val safeAddress = detailedAddress.trim()
+                .ifBlank { if (safeGpsUrl != null) "الموقع المحدد عبر GPS" else "" }
+                .take(240)
+            val safeName = customerName.trim().take(80)
+            val safePhone = customerPhone.trim().take(30)
+
+            require(safePickup.length >= 2) { "يرجى تحديد مكان الاستلام (اسم المحل أو العنوان)" }
+            require(safeDetails.length >= 2) { "يرجى كتابة تفاصيل الطلب أو الحمولة" }
+            require(safeAddress.length >= 2) { "يرجى إدخال العنوان التفصيلي أو تحديد موقعك عبر GPS" }
+            require(safeName.length >= 2) { "يرجى إدخال اسم العميل" }
+            require(safePhone.length >= 4) { "يرجى إدخال رقم هاتف صحيح للتواصل" }
+
+            val docRef = db.collection("delivery_requests").document()
+            docPath = docRef.path
+            val payload = mapOf(
+                "userId" to uid,
+                "orderType" to orderType.name,
+                "vehicleType" to vehicleType.name,
+                "pickupLocation" to safePickup,
+                "orderDetails" to safeDetails,
+                "deliveryZone" to deliveryZone.name,
+                "detailedAddress" to safeAddress,
+                "gpsMapsUrl" to safeGpsUrl,
+                "customerName" to safeName,
+                "customerPhone" to safePhone,
+                "status" to DeliveryStatus.PENDING.name,
+                "visibility" to "NEIGHBORHOOD",
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            ).filterValues { it != null }
+            docRef.set(payload).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateDeliveryStatus(requestId: String, nextStatus: DeliveryStatus): Result<Unit> {
+        val docPath = "delivery_requests/$requestId"
+        return try {
+            requireUserId()
+            require(requestId.isNotBlank())
+            require(nextStatus == DeliveryStatus.COMPLETED || nextStatus == DeliveryStatus.CANCELLED)
+            db.collection("delivery_requests").document(requestId).update(
+                mapOf(
+                    "status" to nextStatus.name,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteDeliveryRequest(requestId: String): Result<Unit> {
+        val docPath = "delivery_requests/$requestId"
+        return try {
+            requireUserId()
+            require(requestId.isNotBlank())
+            db.collection("delivery_requests").document(requestId).delete().await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e

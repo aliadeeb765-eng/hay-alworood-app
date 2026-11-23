@@ -6,6 +6,7 @@
     <string name="sign_out">تسجيل الخروج</string>
     <string name="nav_services">الخدمات</string>
     <string name="nav_stores">المتاجر</string>
+    <string name="nav_delivery">التوصيل</string>
     <string name="nav_schedules">المواعيد</string>
     <string name="nav_announcements">الإعلانات</string>
     <string name="nav_fazaa">فزعة الجيران</string>

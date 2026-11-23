@@ -1,28 +1,36 @@
 package com.example.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Handshake
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Handshake
+import androidx.compose.material.icons.outlined.LocalShipping
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +64,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
@@ -64,12 +73,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.BuildConfig
 import com.example.R
 import com.example.auth.AuthScreen
 import com.example.auth.signOutUser
 import com.example.data.firebase.HayAlWurudRepository
+import com.example.data.location.LocationHelper
 import com.example.data.model.CommunityPost
 import com.example.data.model.CraftFilterCategory
+import com.example.data.model.DELIVERY_ADMIN_WHATSAPP_PHONE
+import com.example.data.model.DeliveryOrderType
+import com.example.data.model.DeliveryPrefill
+import com.example.data.model.DeliveryRequest
+import com.example.data.model.DeliveryStatus
+import com.example.data.model.DeliveryVehicleType
+import com.example.data.model.DeliveryZone
 import com.example.data.model.FavoriteService
 import com.example.data.model.HayAlWurudSectors
 import com.example.data.model.NeighborhoodStore
@@ -79,20 +97,29 @@ import com.example.data.model.ServiceProvider
 import com.example.data.model.ServiceRecommendation
 import com.example.data.model.StoreCategory
 import com.example.data.model.StoreProduct
+import com.example.data.model.StoreReview
 import com.example.data.model.UtilityStatus
 import com.example.data.model.UtilityType
 import com.example.data.model.UtilityUpdate
+import com.example.data.model.buildDriverRegistrationWhatsAppMessage
+import com.example.data.model.suggestedDeliveryOrderType
 import com.example.data.network.ConnectivityObserver
+import com.example.data.update.AppUpdateChecker
+import com.example.data.update.AppUpdateInfo
 import com.example.ui.components.AddCommunityPostDialog
 import com.example.ui.components.AddServiceDialog
 import com.example.ui.components.AddStoreProductDialog
 import com.example.ui.components.AddUtilityReportDialog
 import com.example.ui.components.GuestModeBanner
 import com.example.ui.components.InAppModalDialog
+import com.example.ui.components.JoinDeliveryDriverDialog
 import com.example.ui.components.OfflineStatusBanner
+import com.example.ui.components.RateStoreDialog
 import com.example.ui.components.RegisterStoreDialog
+import com.example.ui.components.openWhatsAppMessage
 import com.example.ui.screens.CommunityBoardMode
 import com.example.ui.screens.CommunityScreen
+import com.example.ui.screens.DeliveryScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.ServicesScreen
@@ -114,6 +141,7 @@ enum class NeighborhoodTab(
 ) {
     SERVICES("الخدمات", Icons.Filled.Build, Icons.Outlined.Build, "nav_services"),
     STORES("المتاجر", Icons.Filled.Storefront, Icons.Outlined.Storefront, "nav_stores"),
+    DELIVERY("التوصيل", Icons.Filled.LocalShipping, Icons.Outlined.LocalShipping, "nav_delivery"),
     SCHEDULES("المواعيد", Icons.Filled.Schedule, Icons.Outlined.Schedule, "nav_schedules"),
     ANNOUNCEMENTS("الإعلانات", Icons.Filled.Campaign, Icons.Outlined.Campaign, "nav_announcements"),
     FAZAA("فزعة الجيران", Icons.Filled.Handshake, Icons.Outlined.Handshake, "nav_fazaa")
@@ -135,7 +163,15 @@ private fun resolveFirebaseAuth(context: android.content.Context): FirebaseAuth?
 }
 
 @Composable
-fun HayAlWurudApp() {
+fun HayAlWurudApp(
+    updateChecker: suspend () -> AppUpdateInfo? = { AppUpdateChecker.checkForUpdate() },
+    gpsLocationFetcher: suspend (android.content.Context) -> Result<String> = { ctx ->
+        LocationHelper.fetchCurrentGoogleMapsUrl(ctx)
+    },
+    onOpenWhatsApp: (android.content.Context, String, String) -> Unit = { ctx, phone, msg ->
+        openWhatsAppMessage(ctx, phone, msg)
+    }
+) {
     HayAlWurudTheme {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
             val context = LocalContext.current
@@ -146,6 +182,12 @@ fun HayAlWurudApp() {
             var currentUser by remember { mutableStateOf<FirebaseUser?>(firebaseAuth?.currentUser) }
             // Allow immediate entry for any user initially; user can sign in with Google anytime.
             var showAuthScreen by rememberSaveable { mutableStateOf(false) }
+            var availableUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
+            var updatePromptDismissed by rememberSaveable { mutableStateOf(false) }
+
+            LaunchedEffect(updateChecker) {
+                availableUpdate = updateChecker()
+            }
 
             DisposableEffect(firebaseAuth) {
                 if (firebaseAuth == null) {
@@ -162,70 +204,145 @@ fun HayAlWurudApp() {
                 }
             }
 
-            val signedInUser = currentUser
-            if (signedInUser != null) {
-                val uid = signedInUser.uid
-                val displayName = signedInUser.displayName?.takeIf { it.isNotBlank() } ?: "أحد أهالي الحي"
-                val email = signedInUser.email
-                val photoUrl = signedInUser.photoUrl?.toString()
+            Box(modifier = Modifier.fillMaxSize()) {
+                val signedInUser = currentUser
+                if (signedInUser != null) {
+                    val uid = signedInUser.uid
+                    val displayName = signedInUser.displayName?.takeIf { it.isNotBlank() } ?: "أحد أهالي الحي"
+                    val email = signedInUser.email
+                    val photoUrl = signedInUser.photoUrl?.toString()
 
-                key(uid) {
-                    val viewModel: HayAlWurudViewModel = viewModel(
-                        key = uid,
+                    key(uid) {
+                        val viewModel: HayAlWurudViewModel = viewModel(
+                            key = uid,
+                            factory = viewModelFactory {
+                                initializer {
+                                    val app = checkNotNull(this[APPLICATION_KEY]) {
+                                        "APPLICATION_KEY missing from CreationExtras"
+                                    }
+                                    val databaseId = app.getString(R.string.firestore_database_id)
+                                    val db = FirebaseFirestore.getInstance(databaseId)
+                                    HayAlWurudViewModel(
+                                        repository = HayAlWurudRepository(db),
+                                        connectivityObserver = ConnectivityObserver(app),
+                                        currentUserId = uid,
+                                        currentUserName = displayName,
+                                        currentUserEmail = email
+                                    )
+                                }
+                            }
+                        )
+
+                        AuthenticatedHayAlWurudShell(
+                            viewModel = viewModel,
+                            displayName = displayName,
+                            email = email,
+                            photoUrl = photoUrl,
+                            gpsLocationFetcher = gpsLocationFetcher,
+                            onOpenWhatsApp = onOpenWhatsApp,
+                            onSignOut = {
+                                signOutUser(credentialManager, scope) {
+                                    currentUser = null
+                                }
+                            }
+                        )
+                    }
+                } else if (showAuthScreen) {
+                    AuthScreen(
+                        onAuthSuccess = {
+                            currentUser = firebaseAuth?.currentUser
+                            showAuthScreen = false
+                        },
+                        onContinueAsGuest = { showAuthScreen = false }
+                    )
+                } else {
+                    val guestViewModel: GuestNeighborhoodViewModel = viewModel(
+                        key = "guest_session",
                         factory = viewModelFactory {
                             initializer {
                                 val app = checkNotNull(this[APPLICATION_KEY]) {
                                     "APPLICATION_KEY missing from CreationExtras"
                                 }
-                                val databaseId = app.getString(R.string.firestore_database_id)
-                                val db = FirebaseFirestore.getInstance(databaseId)
-                                HayAlWurudViewModel(
-                                    repository = HayAlWurudRepository(db),
-                                    connectivityObserver = ConnectivityObserver(app),
-                                    currentUserId = uid,
-                                    currentUserName = displayName,
-                                    currentUserEmail = email
-                                )
+                                GuestNeighborhoodViewModel(ConnectivityObserver(app))
                             }
                         }
                     )
-
-                    AuthenticatedHayAlWurudShell(
-                        viewModel = viewModel,
-                        displayName = displayName,
-                        email = email,
-                        photoUrl = photoUrl,
-                        onSignOut = {
-                            signOutUser(credentialManager, scope) {
-                                currentUser = null
-                            }
-                        }
+                    GuestHayAlWurudShell(
+                        viewModel = guestViewModel,
+                        gpsLocationFetcher = gpsLocationFetcher,
+                        onOpenWhatsApp = onOpenWhatsApp,
+                        onOpenSignIn = { showAuthScreen = true }
                     )
                 }
-            } else if (showAuthScreen) {
-                AuthScreen(
-                    onAuthSuccess = {
-                        currentUser = firebaseAuth?.currentUser
-                        showAuthScreen = false
-                    },
-                    onContinueAsGuest = { showAuthScreen = false }
-                )
-            } else {
-                val guestViewModel: GuestNeighborhoodViewModel = viewModel(
-                    key = "guest_session",
-                    factory = viewModelFactory {
-                        initializer {
-                            val app = checkNotNull(this[APPLICATION_KEY]) {
-                                "APPLICATION_KEY missing from CreationExtras"
+
+                val pendingUpdate = availableUpdate
+                if (pendingUpdate != null && !updatePromptDismissed) {
+                    InAppModalDialog(
+                        title = "يتوفر تحديث جديد لتطبيق حي الورود",
+                        onDismiss = { updatePromptDismissed = true },
+                        confirmButton = {
+                            androidx.compose.material3.Button(
+                                onClick = {
+                                    AppUpdateChecker.openUpdateDownloadUrl(context, pendingUpdate.apkUrl)
+                                    updatePromptDismissed = true
+                                },
+                                modifier = Modifier.testTag("update_download_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Download,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("تحميل التحديث")
                             }
-                            GuestNeighborhoodViewModel(ConnectivityObserver(app))
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(
+                                onClick = { updatePromptDismissed = true },
+                                modifier = Modifier.testTag("update_dismiss_button")
+                            ) {
+                                Text("لاحقاً")
+                            }
+                        }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("update_available_dialog"),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.SystemUpdate,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "الإصدار الجديد: ${pendingUpdate.latestVersion}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "إصدارك الحالي: ${BuildConfig.VERSION_CODE}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "تتوفر نسخة أحدث من تطبيق حي الورود تتضمن تحسينات ومزايا جديدة. اضغط على «تحميل التحديث» لتنزيل الملف وتثبيته.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
-                )
-                GuestHayAlWurudShell(
-                    viewModel = guestViewModel,
-                    onOpenSignIn = { showAuthScreen = true }
-                )
+                }
             }
         }
     }
@@ -237,6 +354,8 @@ private fun AuthenticatedHayAlWurudShell(
     displayName: String,
     email: String?,
     photoUrl: String?,
+    gpsLocationFetcher: suspend (android.content.Context) -> Result<String>,
+    onOpenWhatsApp: (android.content.Context, String, String) -> Unit,
     onSignOut: () -> Unit
 ) {
     val profileState by viewModel.profileState.collectAsStateWithLifecycle()
@@ -258,9 +377,12 @@ private fun AuthenticatedHayAlWurudShell(
     val showResolvedPosts by viewModel.showResolvedPosts.collectAsStateWithLifecycle()
     val storesState by viewModel.storesState.collectAsStateWithLifecycle()
     val storeProductsState by viewModel.storeProductsState.collectAsStateWithLifecycle()
+    val storeReviewsState by viewModel.storeReviewsState.collectAsStateWithLifecycle()
+    val deliveryRequestsState by viewModel.deliveryRequestsState.collectAsStateWithLifecycle()
     val storeSearchQuery by viewModel.storeSearchQuery.collectAsStateWithLifecycle()
     val selectedStoreCategory by viewModel.selectedStoreCategory.collectAsStateWithLifecycle()
     val showOffersOnly by viewModel.showOffersOnly.collectAsStateWithLifecycle()
+    val sortStoresByRating by viewModel.sortStoresByRating.collectAsStateWithLifecycle()
 
     val preferredSector = (profileState as? UiState.Success)?.data?.preferredSector
         ?: HayAlWurudSectors.ALL.first()
@@ -289,6 +411,10 @@ private fun AuthenticatedHayAlWurudShell(
         postsState = postsState,
         storesState = storesState,
         storeProductsState = storeProductsState,
+        storeReviewsState = storeReviewsState,
+        deliveryRequestsState = deliveryRequestsState,
+        gpsLocationFetcher = gpsLocationFetcher,
+        onOpenWhatsApp = onOpenWhatsApp,
         serviceSearchQuery = serviceSearchQuery,
         selectedServiceCategory = selectedServiceCategory,
         selectedSectorFilter = selectedSectorFilter,
@@ -299,6 +425,7 @@ private fun AuthenticatedHayAlWurudShell(
         storeSearchQuery = storeSearchQuery,
         selectedStoreCategory = selectedStoreCategory,
         showOffersOnly = showOffersOnly,
+        sortStoresByRating = sortStoresByRating,
         snackbarHostState = snackbarHostState,
         onServiceSearchChange = viewModel::updateServiceSearch,
         onSelectServiceCategory = viewModel::selectServiceCategory,
@@ -310,6 +437,7 @@ private fun AuthenticatedHayAlWurudShell(
         onStoreSearchChange = viewModel::updateStoreSearch,
         onSelectStoreCategory = viewModel::selectStoreCategory,
         onToggleOffersOnly = viewModel::toggleShowOffersOnly,
+        onToggleSortStoresByRating = viewModel::toggleSortStoresByRating,
         onToggleFavorite = viewModel::toggleFavorite,
         onToggleRecommend = viewModel::toggleServiceRecommendation,
         onDeleteService = viewModel::deleteServiceProvider,
@@ -326,6 +454,11 @@ private fun AuthenticatedHayAlWurudShell(
         onAddStoreProduct = viewModel::addStoreProduct,
         onToggleProductOfferAndStock = viewModel::toggleProductOfferAndStock,
         onDeleteStoreProduct = viewModel::deleteStoreProduct,
+        onSubmitStoreReview = viewModel::submitStoreReview,
+        onDeleteStoreReview = viewModel::deleteStoreReview,
+        onSubmitDeliveryRequest = viewModel::submitDeliveryRequest,
+        onUpdateDeliveryStatus = viewModel::updateDeliveryStatus,
+        onDeleteDeliveryRequest = viewModel::deleteDeliveryRequest,
         onLoadStarterData = viewModel::loadStarterNeighborhoodData,
         onSignInClick = {},
         onSignOut = onSignOut
@@ -335,6 +468,8 @@ private fun AuthenticatedHayAlWurudShell(
 @Composable
 private fun GuestHayAlWurudShell(
     viewModel: GuestNeighborhoodViewModel,
+    gpsLocationFetcher: suspend (android.content.Context) -> Result<String>,
+    onOpenWhatsApp: (android.content.Context, String, String) -> Unit,
     onOpenSignIn: () -> Unit
 ) {
     val preferredSector by viewModel.preferredSector.collectAsStateWithLifecycle()
@@ -354,9 +489,12 @@ private fun GuestHayAlWurudShell(
     val showResolvedPosts by viewModel.showResolvedPosts.collectAsStateWithLifecycle()
     val storesState by viewModel.storesState.collectAsStateWithLifecycle()
     val storeProductsState by viewModel.storeProductsState.collectAsStateWithLifecycle()
+    val storeReviewsState by viewModel.storeReviewsState.collectAsStateWithLifecycle()
+    val deliveryRequestsState by viewModel.deliveryRequestsState.collectAsStateWithLifecycle()
     val storeSearchQuery by viewModel.storeSearchQuery.collectAsStateWithLifecycle()
     val selectedStoreCategory by viewModel.selectedStoreCategory.collectAsStateWithLifecycle()
     val showOffersOnly by viewModel.showOffersOnly.collectAsStateWithLifecycle()
+    val sortStoresByRating by viewModel.sortStoresByRating.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) {
@@ -382,6 +520,10 @@ private fun GuestHayAlWurudShell(
         postsState = postsState,
         storesState = storesState,
         storeProductsState = storeProductsState,
+        storeReviewsState = storeReviewsState,
+        deliveryRequestsState = deliveryRequestsState,
+        gpsLocationFetcher = gpsLocationFetcher,
+        onOpenWhatsApp = onOpenWhatsApp,
         serviceSearchQuery = serviceSearchQuery,
         selectedServiceCategory = selectedServiceCategory,
         selectedSectorFilter = selectedSectorFilter,
@@ -392,6 +534,7 @@ private fun GuestHayAlWurudShell(
         storeSearchQuery = storeSearchQuery,
         selectedStoreCategory = selectedStoreCategory,
         showOffersOnly = showOffersOnly,
+        sortStoresByRating = sortStoresByRating,
         snackbarHostState = snackbarHostState,
         onServiceSearchChange = viewModel::updateServiceSearch,
         onSelectServiceCategory = viewModel::selectServiceCategory,
@@ -403,6 +546,7 @@ private fun GuestHayAlWurudShell(
         onStoreSearchChange = viewModel::updateStoreSearch,
         onSelectStoreCategory = viewModel::selectStoreCategory,
         onToggleOffersOnly = viewModel::toggleShowOffersOnly,
+        onToggleSortStoresByRating = viewModel::toggleSortStoresByRating,
         onToggleFavorite = viewModel::toggleFavorite,
         onToggleRecommend = viewModel::toggleServiceRecommendation,
         onDeleteService = viewModel::deleteServiceProvider,
@@ -419,6 +563,11 @@ private fun GuestHayAlWurudShell(
         onAddStoreProduct = viewModel::addStoreProduct,
         onToggleProductOfferAndStock = viewModel::toggleProductOfferAndStock,
         onDeleteStoreProduct = viewModel::deleteStoreProduct,
+        onSubmitStoreReview = viewModel::submitStoreReview,
+        onDeleteStoreReview = viewModel::deleteStoreReview,
+        onSubmitDeliveryRequest = viewModel::submitDeliveryRequest,
+        onUpdateDeliveryStatus = viewModel::updateDeliveryStatus,
+        onDeleteDeliveryRequest = viewModel::deleteDeliveryRequest,
         onLoadStarterData = {},
         onSignInClick = onOpenSignIn,
         onSignOut = {}
@@ -444,6 +593,10 @@ private fun NeighborhoodShellContent(
     postsState: UiState<List<CommunityPost>>,
     storesState: UiState<List<NeighborhoodStore>>,
     storeProductsState: UiState<List<StoreProduct>>,
+    storeReviewsState: UiState<List<StoreReview>>,
+    deliveryRequestsState: UiState<List<DeliveryRequest>>,
+    gpsLocationFetcher: suspend (android.content.Context) -> Result<String>,
+    onOpenWhatsApp: (android.content.Context, String, String) -> Unit,
     serviceSearchQuery: String,
     selectedServiceCategory: CraftFilterCategory,
     selectedSectorFilter: String?,
@@ -454,6 +607,7 @@ private fun NeighborhoodShellContent(
     storeSearchQuery: String,
     selectedStoreCategory: StoreCategory?,
     showOffersOnly: Boolean,
+    sortStoresByRating: Boolean,
     snackbarHostState: SnackbarHostState,
     onServiceSearchChange: (String) -> Unit,
     onSelectServiceCategory: (CraftFilterCategory) -> Unit,
@@ -465,6 +619,7 @@ private fun NeighborhoodShellContent(
     onStoreSearchChange: (String) -> Unit,
     onSelectStoreCategory: (StoreCategory?) -> Unit,
     onToggleOffersOnly: () -> Unit,
+    onToggleSortStoresByRating: () -> Unit,
     onToggleFavorite: (ServiceProvider, Boolean) -> Unit,
     onToggleRecommend: (ServiceProvider, Boolean) -> Unit,
     onDeleteService: (String) -> Unit,
@@ -481,6 +636,21 @@ private fun NeighborhoodShellContent(
     onAddStoreProduct: (NeighborhoodStore, String, String, String?, Boolean, String?, String?) -> Unit,
     onToggleProductOfferAndStock: (String, Boolean, Boolean) -> Unit,
     onDeleteStoreProduct: (String) -> Unit,
+    onSubmitStoreReview: (NeighborhoodStore, Int, Int, String?) -> Unit,
+    onDeleteStoreReview: (String) -> Unit,
+    onSubmitDeliveryRequest: (
+        DeliveryOrderType,
+        DeliveryVehicleType,
+        String,
+        String,
+        DeliveryZone,
+        String,
+        String?,
+        String,
+        String
+    ) -> Unit,
+    onUpdateDeliveryStatus: (String, DeliveryStatus) -> Unit,
+    onDeleteDeliveryRequest: (String) -> Unit,
     onLoadStarterData: () -> Unit,
     onSignInClick: () -> Unit,
     onSignOut: () -> Unit
@@ -493,6 +663,9 @@ private fun NeighborhoodShellContent(
     var showAddPostDialog by remember { mutableStateOf(false) }
     var showRegisterStoreDialog by remember { mutableStateOf(false) }
     var productTargetStore by remember { mutableStateOf<NeighborhoodStore?>(null) }
+    var rateTargetStorePair by remember { mutableStateOf<Pair<NeighborhoodStore, StoreReview?>?>(null) }
+    var pendingDeliveryPrefill by remember { mutableStateOf<DeliveryPrefill?>(null) }
+    var showJoinDriverDialog by remember { mutableStateOf(false) }
     var addPostDefaultCategory by remember { mutableStateOf(PostCategory.NOTICE) }
 
     BackHandler(enabled = showProfile || activeTab != NeighborhoodTab.SERVICES) {
@@ -573,7 +746,14 @@ private fun NeighborhoodShellContent(
                                         contentDescription = tab.label
                                     )
                                 },
-                                label = { Text(tab.label, maxLines = 1) },
+                                label = {
+                                    Text(
+                                        text = tab.label,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                },
                                 modifier = Modifier.testTag(tab.testTag)
                             )
                         }
@@ -681,6 +861,14 @@ private fun NeighborhoodShellContent(
                                             onToggleRecommend = onToggleRecommend,
                                             onDeleteService = onDeleteService,
                                             onOpenAddService = { showAddEntryChooserDialog = true },
+                                            onOrderDeliveryFromService = { service ->
+                                                pendingDeliveryPrefill = DeliveryPrefill(
+                                                    pickupLocation = service.name,
+                                                    orderType = service.suggestedDeliveryOrderType()
+                                                )
+                                                showProfile = false
+                                                activeTab = NeighborhoodTab.DELIVERY
+                                            },
                                             onLoadStarterData = onLoadStarterData
                                         )
 
@@ -688,20 +876,50 @@ private fun NeighborhoodShellContent(
                                             currentUserId = currentUserId,
                                             storesState = storesState,
                                             storeProductsState = storeProductsState,
+                                            storeReviewsState = storeReviewsState,
                                             searchQuery = storeSearchQuery,
                                             selectedCategory = selectedStoreCategory,
                                             selectedSector = selectedSectorFilter,
                                             showOffersOnly = showOffersOnly,
+                                            sortByRating = sortStoresByRating,
                                             onSearchQueryChange = onStoreSearchChange,
                                             onSelectCategory = onSelectStoreCategory,
                                             onSelectSector = onSelectSector,
                                             onToggleOffersOnly = onToggleOffersOnly,
+                                            onToggleSortByRating = onToggleSortStoresByRating,
                                             onOpenRegisterStore = { showRegisterStoreDialog = true },
                                             onOpenAddProduct = { store -> productTargetStore = store },
+                                            onOpenRateStore = { store, existingReview ->
+                                                rateTargetStorePair = store to existingReview
+                                            },
+                                            onOrderDeliveryFromStore = { store ->
+                                                pendingDeliveryPrefill = DeliveryPrefill(
+                                                    pickupLocation = store.name,
+                                                    orderType = store.suggestedDeliveryOrderType()
+                                                )
+                                                showProfile = false
+                                                activeTab = NeighborhoodTab.DELIVERY
+                                            },
+                                            onDeleteStoreReview = onDeleteStoreReview,
                                             onToggleStoreOpen = onToggleStoreOpen,
                                             onDeleteStore = onDeleteStore,
                                             onToggleProductOfferAndStock = onToggleProductOfferAndStock,
                                             onDeleteProduct = onDeleteStoreProduct
+                                        )
+
+                                        NeighborhoodTab.DELIVERY -> DeliveryScreen(
+                                            currentUserId = currentUserId,
+                                            defaultCustomerName = if (isGuest) "" else displayName,
+                                            deliveryRequestsState = deliveryRequestsState,
+                                            prefill = pendingDeliveryPrefill,
+                                            isMutating = isMutating,
+                                            onPrefillConsumed = { pendingDeliveryPrefill = null },
+                                            onSubmitDeliveryRequest = onSubmitDeliveryRequest,
+                                            onUpdateDeliveryStatus = onUpdateDeliveryStatus,
+                                            onDeleteDeliveryRequest = onDeleteDeliveryRequest,
+                                            gpsLocationFetcher = gpsLocationFetcher,
+                                            onOpenWhatsApp = onOpenWhatsApp,
+                                            onOpenJoinDriverDialog = { showJoinDriverDialog = true }
                                         )
 
                                         NeighborhoodTab.SCHEDULES -> HomeScreen(
@@ -867,6 +1085,32 @@ private fun NeighborhoodShellContent(
                     specsText,
                     description
                 )
+            }
+        )
+    }
+
+    rateTargetStorePair?.let { (targetStore, existingReview) ->
+        RateStoreDialog(
+            store = targetStore,
+            existingReview = existingReview,
+            onDismiss = { rateTargetStorePair = null },
+            onSubmit = { quality, credibility, comment ->
+                onSubmitStoreReview(targetStore, quality, credibility, comment)
+            }
+        )
+    }
+
+    if (showJoinDriverDialog) {
+        val dialogContext = LocalContext.current
+        JoinDeliveryDriverDialog(
+            onDismiss = { showJoinDriverDialog = false },
+            onSubmitDriver = { fullName, phone, vehicleType ->
+                val message = buildDriverRegistrationWhatsAppMessage(
+                    fullName = fullName,
+                    phone = phone,
+                    vehicleType = vehicleType
+                )
+                onOpenWhatsApp(dialogContext, DELIVERY_ADMIN_WHATSAPP_PHONE, message)
             }
         )
     }

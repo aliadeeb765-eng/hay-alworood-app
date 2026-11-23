@@ -9,6 +9,7 @@ import com.example.data.model.ServiceProvider
 import com.example.data.model.ServiceRecommendation
 import com.example.data.model.StoreCategory
 import com.example.data.model.StoreProduct
+import com.example.data.model.StoreReview
 import com.example.data.model.UtilityStatus
 import com.example.data.model.UtilityType
 import com.example.data.model.UtilityUpdate
@@ -383,6 +384,115 @@ object HayAlWurudStarterCatalog {
             onOffer = false,
             inStock = true,
             specsText = "65W PD • متوفر لجميع الموديلات",
+            createdAt = now,
+            updatedAt = now
+        )
+    )
+
+    fun starterStoreReviews(now: Timestamp? = Timestamp.now()): List<StoreReview> = listOf(
+        StoreReview(
+            id = "guest_store_1_neighbor_1",
+            storeId = "guest_store_1",
+            userId = "neighbor_1",
+            reviewerName = "أم محمود",
+            serviceQualityRating = 5,
+            offerCredibilityRating = 5,
+            overallRating = 5.0,
+            comment = "معاملة راقية جداً والأسعار والعروض مطابقة تماماً للمعلن بدون أي زيادة.",
+            createdAt = now,
+            updatedAt = now
+        ),
+        StoreReview(
+            id = "guest_store_1_neighbor_2",
+            storeId = "guest_store_1",
+            userId = "neighbor_2",
+            reviewerName = "خالد",
+            serviceQualityRating = 5,
+            offerCredibilityRating = 4,
+            overallRating = 4.5,
+            comment = "جودة الألبسة ممتازة والتبديل سهل إذا تغير المقاس.",
+            createdAt = now,
+            updatedAt = now
+        ),
+        StoreReview(
+            id = "guest_store_2_neighbor_1",
+            storeId = "guest_store_2",
+            userId = "neighbor_1",
+            reviewerName = "أبو سليم",
+            serviceQualityRating = 4,
+            offerCredibilityRating = 5,
+            overallRating = 4.5,
+            comment = "الحذاء الطبي مريح جداً وسعر العرض كان أوفر من السوق.",
+            createdAt = now,
+            updatedAt = now
+        ),
+        StoreReview(
+            id = "guest_store_3_neighbor_3",
+            storeId = "guest_store_3",
+            userId = "neighbor_3",
+            reviewerName = "سارة",
+            serviceQualityRating = 5,
+            offerCredibilityRating = 5,
+            overallRating = 5.0,
+            comment = "منتجات أصلية 100% وعرض نهاية الأسبوع حقيقي ومجرب.",
+            createdAt = now,
+            updatedAt = now
+        ),
+        StoreReview(
+            id = "guest_store_4_neighbor_2",
+            storeId = "guest_store_4",
+            userId = "neighbor_2",
+            reviewerName = "أم طارق",
+            serviceQualityRating = 5,
+            offerCredibilityRating = 5,
+            overallRating = 5.0,
+            comment = "تعاون كبير مع الطلاب وأسعار القرطاسية مدروسة.",
+            createdAt = now,
+            updatedAt = now
+        ),
+        StoreReview(
+            id = "guest_store_5_neighbor_1",
+            storeId = "guest_store_5",
+            userId = "neighbor_1",
+            reviewerName = "وسيم",
+            serviceQualityRating = 5,
+            offerCredibilityRating = 4,
+            overallRating = 4.5,
+            comment = "صيانة سريعة وكفالة حقيقية على الإكسسوارات.",
+            createdAt = now,
+            updatedAt = now
+        )
+    )
+
+    fun starterDeliveryRequests(now: Timestamp? = Timestamp.now()): List<com.example.data.model.DeliveryRequest> = listOf(
+        com.example.data.model.DeliveryRequest(
+            id = "guest_del_1",
+            userId = "neighbor_1",
+            orderType = com.example.data.model.DeliveryOrderType.PHARMACY.name,
+            vehicleType = com.example.data.model.DeliveryVehicleType.MOTORCYCLE.name,
+            pickupLocation = "صيدلية الورود المناوبة",
+            orderDetails = "مسكن ألم + شراب سعال أطفال، الدفع عند الاستلام.",
+            deliveryZone = com.example.data.model.DeliveryZone.INSIDE_HAY_AL_WURUD.name,
+            detailedAddress = "شارع المدارس، بناء رقم 12، طابق 3",
+            gpsMapsUrl = "https://maps.google.com/?q=33.531800,36.244900",
+            customerName = "أم محمود",
+            customerPhone = "0933556677",
+            status = com.example.data.model.DeliveryStatus.PENDING.name,
+            createdAt = now,
+            updatedAt = now
+        ),
+        com.example.data.model.DeliveryRequest(
+            id = "guest_del_2",
+            userId = "neighbor_2",
+            orderType = com.example.data.model.DeliveryOrderType.CARGO_FURNITURE.name,
+            vehicleType = com.example.data.model.DeliveryVehicleType.SUZUKI.name,
+            pickupLocation = "مركز التقنية للكمبيوتر والإكسسوارات",
+            orderDetails = "نقل طاولة كمبيوتر وكرتونة شاشة إلى ضاحية قدسيا.",
+            deliveryZone = com.example.data.model.DeliveryZone.QUDSAYA_SUBURB.name,
+            detailedAddress = "الجزيرة السابعة، بناء السلام، مدخل B",
+            customerName = "طارق",
+            customerPhone = "0944889911",
+            status = com.example.data.model.DeliveryStatus.COMPLETED.name,
             createdAt = now,
             updatedAt = now
         )

@@ -5,6 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.local.HayAlWurudStarterCatalog
 import com.example.data.model.CommunityPost
 import com.example.data.model.CraftFilterCategory
+import com.example.data.model.DeliveryOrderType
+import com.example.data.model.DeliveryRequest
+import com.example.data.model.DeliveryStatus
+import com.example.data.model.DeliveryVehicleType
+import com.example.data.model.DeliveryZone
 import com.example.data.model.FavoriteService
 import com.example.data.model.HayAlWurudSectors
 import com.example.data.model.NeighborhoodStore
@@ -15,6 +20,7 @@ import com.example.data.model.ServiceProvider
 import com.example.data.model.ServiceRecommendation
 import com.example.data.model.StoreCategory
 import com.example.data.model.StoreProduct
+import com.example.data.model.StoreReview
 import com.example.data.model.UtilityStatus
 import com.example.data.model.UtilityType
 import com.example.data.model.UtilityUpdate
@@ -94,14 +100,24 @@ class GuestNeighborhoodViewModel(
     val showResolvedPosts: StateFlow<Boolean> = _showResolvedPosts.asStateFlow()
 
     private val _storesState = MutableStateFlow<UiState<List<NeighborhoodStore>>>(
-        UiState.Success(HayAlWurudStarterCatalog.starterStores(guestUserId, "أهل حي الورود"))
+        UiState.Success(HayAlWurudStarterCatalog.starterStores("neighbor_store_owner", "أهل حي الورود"))
     )
     val storesState: StateFlow<UiState<List<NeighborhoodStore>>> = _storesState.asStateFlow()
 
     private val _storeProductsState = MutableStateFlow<UiState<List<StoreProduct>>>(
-        UiState.Success(HayAlWurudStarterCatalog.starterStoreProducts(guestUserId))
+        UiState.Success(HayAlWurudStarterCatalog.starterStoreProducts("neighbor_store_owner"))
     )
     val storeProductsState: StateFlow<UiState<List<StoreProduct>>> = _storeProductsState.asStateFlow()
+
+    private val _storeReviewsState = MutableStateFlow<UiState<List<StoreReview>>>(
+        UiState.Success(HayAlWurudStarterCatalog.starterStoreReviews())
+    )
+    val storeReviewsState: StateFlow<UiState<List<StoreReview>>> = _storeReviewsState.asStateFlow()
+
+    private val _deliveryRequestsState = MutableStateFlow<UiState<List<DeliveryRequest>>>(
+        UiState.Success(HayAlWurudStarterCatalog.starterDeliveryRequests())
+    )
+    val deliveryRequestsState: StateFlow<UiState<List<DeliveryRequest>>> = _deliveryRequestsState.asStateFlow()
 
     private val _storeSearchQuery = MutableStateFlow("")
     val storeSearchQuery: StateFlow<String> = _storeSearchQuery.asStateFlow()
@@ -111,6 +127,9 @@ class GuestNeighborhoodViewModel(
 
     private val _showOffersOnly = MutableStateFlow(false)
     val showOffersOnly: StateFlow<Boolean> = _showOffersOnly.asStateFlow()
+
+    private val _sortStoresByRating = MutableStateFlow(false)
+    val sortStoresByRating: StateFlow<Boolean> = _sortStoresByRating.asStateFlow()
 
     private val _snackbarMessage = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val snackbarMessage = _snackbarMessage.asSharedFlow()
@@ -405,5 +424,105 @@ class GuestNeighborhoodViewModel(
         val current = (_storeProductsState.value as? UiState.Success)?.data.orEmpty()
         _storeProductsState.value = UiState.Success(current.filterNot { it.id == productId })
         _snackbarMessage.tryEmit("تم حذف المنتج")
+    }
+
+    fun toggleSortStoresByRating() {
+        _sortStoresByRating.value = !_sortStoresByRating.value
+    }
+
+    fun submitStoreReview(
+        store: NeighborhoodStore,
+        serviceQualityRating: Int,
+        offerCredibilityRating: Int,
+        comment: String?
+    ) {
+        if (store.userId == guestUserId) {
+            _snackbarMessage.tryEmit("لا يمكنك تقييم متجرك الخاص")
+            return
+        }
+        val safeQuality = serviceQualityRating.coerceIn(1, 5)
+        val safeCredibility = offerCredibilityRating.coerceIn(1, 5)
+        val overall = (safeQuality + safeCredibility) / 2.0
+        val reviewId = "${store.id}_$guestUserId"
+        val current = (_storeReviewsState.value as? UiState.Success)?.data.orEmpty()
+        val existing = current.firstOrNull { it.id == reviewId || (it.storeId == store.id && it.userId == guestUserId) }
+        val newReview = StoreReview(
+            id = reviewId,
+            storeId = store.id,
+            userId = guestUserId,
+            reviewerName = guestUserName,
+            serviceQualityRating = safeQuality,
+            offerCredibilityRating = safeCredibility,
+            overallRating = overall,
+            comment = comment?.trim()?.takeIf { it.isNotBlank() }?.take(300),
+            createdAt = existing?.createdAt ?: Timestamp.now(),
+            updatedAt = Timestamp.now()
+        )
+        val updated = listOf(newReview) + current.filterNot { it.id == reviewId || (it.storeId == store.id && it.userId == guestUserId) }
+        _storeReviewsState.value = UiState.Success(updated)
+        _snackbarMessage.tryEmit("شكراً لتقييمك! تم حفظ رأيك حول ${store.name} (وضع المعاينة المحلي)")
+    }
+
+    fun deleteStoreReview(storeId: String) {
+        val current = (_storeReviewsState.value as? UiState.Success)?.data.orEmpty()
+        _storeReviewsState.value = UiState.Success(
+            current.filterNot { it.storeId == storeId && it.userId == guestUserId }
+        )
+        _snackbarMessage.tryEmit("تم حذف تقييمك")
+    }
+
+    fun submitDeliveryRequest(
+        orderType: DeliveryOrderType,
+        vehicleType: DeliveryVehicleType,
+        pickupLocation: String,
+        orderDetails: String,
+        deliveryZone: DeliveryZone,
+        detailedAddress: String,
+        gpsMapsUrl: String?,
+        customerName: String,
+        customerPhone: String
+    ) {
+        val safeGpsUrl = gpsMapsUrl?.trim()?.takeIf { it.isNotBlank() }?.take(300)
+        val safeAddress = detailedAddress.trim()
+            .ifBlank { if (safeGpsUrl != null) "الموقع المحدد عبر GPS" else "" }
+            .take(240)
+        val current = (_deliveryRequestsState.value as? UiState.Success)?.data.orEmpty()
+        val newRequest = DeliveryRequest(
+            id = "guest_del_${UUID.randomUUID()}",
+            userId = guestUserId,
+            orderType = orderType.name,
+            vehicleType = vehicleType.name,
+            pickupLocation = pickupLocation.trim().take(160),
+            orderDetails = orderDetails.trim().take(600),
+            deliveryZone = deliveryZone.name,
+            detailedAddress = safeAddress,
+            gpsMapsUrl = safeGpsUrl,
+            customerName = customerName.trim().take(80),
+            customerPhone = customerPhone.trim().take(30),
+            status = DeliveryStatus.PENDING.name,
+            createdAt = Timestamp.now(),
+            updatedAt = Timestamp.now()
+        )
+        _deliveryRequestsState.value = UiState.Success(listOf(newRequest) + current)
+        _snackbarMessage.tryEmit("تم تسجيل طلب التوصيل بنجاح (وضع المعاينة المحلي)")
+    }
+
+    fun updateDeliveryStatus(requestId: String, nextStatus: DeliveryStatus) {
+        val current = (_deliveryRequestsState.value as? UiState.Success)?.data.orEmpty()
+        _deliveryRequestsState.value = UiState.Success(
+            current.map { req ->
+                if (req.id == requestId) req.copy(status = nextStatus.name, updatedAt = Timestamp.now())
+                else req
+            }
+        )
+        _snackbarMessage.tryEmit(
+            if (nextStatus == DeliveryStatus.COMPLETED) "تم تأكيد إتمام التوصيل" else "تم إلغاء طلب التوصيل"
+        )
+    }
+
+    fun deleteDeliveryRequest(requestId: String) {
+        val current = (_deliveryRequestsState.value as? UiState.Success)?.data.orEmpty()
+        _deliveryRequestsState.value = UiState.Success(current.filterNot { it.id == requestId })
+        _snackbarMessage.tryEmit("تم حذف طلب التوصيل")
     }
 }
