@@ -8,6 +8,7 @@ import com.example.data.model.DeliveryOrderType
 import com.example.data.model.DeliveryVehicleType
 import com.example.data.model.DeliveryZone
 import com.example.data.model.NeighborhoodServicesCatalog
+import com.example.data.model.PhoneEntry
 import com.example.data.model.StoreCategory
 import com.example.data.model.StoreReview
 import com.example.data.model.buildDeliveryOrderWhatsAppMessage
@@ -186,23 +187,37 @@ class ExampleUnitTest {
         val truck = calculateEstimatedDeliveryFare(DeliveryVehicleType.TRUCK, DeliveryZone.OTHER_DAMASCUS)
         assertEquals("تبدأ من 120,000 ل.س", truck.headlinePrice)
         assertEquals(expectedNote, truck.disclaimerNote)
+
+        // Custom vehicle or custom zone via "أخرى"
+        val customVehicleFare = calculateEstimatedDeliveryFare(DeliveryVehicleType.OTHER, DeliveryZone.INSIDE_HAY_AL_WURUD)
+        assertEquals("يتم تحديد السعر بدقة بالاتفاق عبر واتساب", customVehicleFare.headlinePrice)
+
+        val customZoneFare = calculateEstimatedDeliveryFare(DeliveryVehicleType.MOTORCYCLE, DeliveryZone.OTHER)
+        assertEquals("يتم تحديد السعر بدقة بالاتفاق عبر واتساب", customZoneFare.headlinePrice)
     }
 
     @Test
-    fun `whatsapp message builders include all order and driver details`() {
+    fun `whatsapp message builders include custom labels and multiple mobile and landline phones`() {
         assertEquals("0933125102", DELIVERY_ADMIN_WHATSAPP_PHONE)
+
+        val phones = listOf(
+            PhoneEntry("0944112233", "موبايل"),
+            PhoneEntry("0112233445", "هاتف أرضي")
+        )
+        val roundTrip = PhoneEntry.parseList(PhoneEntry.serializeList(phones))
+        assertEquals(phones, roundTrip)
 
         val fare = calculateEstimatedDeliveryFare(DeliveryVehicleType.PICKUP, DeliveryZone.QUDSAYA_SUBURB)
         val orderMessage = buildDeliveryOrderWhatsAppMessage(
-            orderType = DeliveryOrderType.CARGO_FURNITURE,
-            vehicleType = DeliveryVehicleType.PICKUP,
+            orderTypeLabel = "نقل بضائع وأثاث",
+            vehicleTypeLabel = "بيك أب",
             pickupLocation = "مفروشات النور",
             orderDetails = "خزانة غرف نوم",
-            deliveryZone = DeliveryZone.QUDSAYA_SUBURB,
+            deliveryZoneLabel = "ضاحية قدسيا",
             detailedAddress = "الجزيرة ب2 طابق 1",
             gpsMapsUrl = "https://maps.google.com/?q=33.532100,36.224500",
             customerName = "مازن الدمشقي",
-            customerPhone = "0944112233",
+            customerPhones = phones,
             fareEstimate = fare
         )
 
@@ -214,17 +229,18 @@ class ExampleUnitTest {
         assertTrue(orderMessage.contains("الجزيرة ب2 طابق 1"))
         assertTrue(orderMessage.contains("https://maps.google.com/?q=33.532100,36.224500"))
         assertTrue(orderMessage.contains("مازن الدمشقي"))
-        assertTrue(orderMessage.contains("0944112233"))
+        assertTrue(orderMessage.contains("0944112233 (موبايل)"))
+        assertTrue(orderMessage.contains("0112233445 (هاتف أرضي)"))
         assertTrue(orderMessage.contains("تبدأ من 80,000 ل.س"))
 
         val driverMessage = buildDriverRegistrationWhatsAppMessage(
             fullName = "أيمن كمال",
-            phone = "0966778899",
-            vehicleType = DeliveryVehicleType.VAN
+            phones = listOf(PhoneEntry("0966778899", "موبايل")),
+            vehicleTypeLabel = "فان"
         )
 
         assertTrue(driverMessage.contains("أيمن كمال"))
-        assertTrue(driverMessage.contains("0966778899"))
+        assertTrue(driverMessage.contains("0966778899 (موبايل)"))
         assertTrue(driverMessage.contains("فان"))
     }
 }

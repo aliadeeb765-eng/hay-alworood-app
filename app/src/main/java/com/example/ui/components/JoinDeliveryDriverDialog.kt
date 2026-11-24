@@ -8,11 +8,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,21 +29,29 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.example.data.local.CustomOptionsPrefs
 import com.example.data.model.DeliveryVehicleType
+import com.example.data.model.PhoneEntry
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JoinDeliveryDriverDialog(
     onDismiss: () -> Unit,
-    onSubmitDriver: (fullName: String, phone: String, vehicleType: DeliveryVehicleType) -> Unit
+    onSubmitDriver: (fullName: String, phones: List<PhoneEntry>, vehicleTypeLabel: String) -> Unit
 ) {
+    val context = LocalContext.current
     var fullName by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
+    var driverPhones by remember { mutableStateOf(listOf(PhoneEntry("", "موبايل"))) }
     var selectedVehicle by remember { mutableStateOf(DeliveryVehicleType.MOTORCYCLE) }
+    var customVehicles by remember {
+        mutableStateOf(CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_VEHICLE_TYPES))
+    }
+    var selectedCustomVehicle by remember { mutableStateOf<String?>(null) }
+    var customVehicleDraft by remember { mutableStateOf("") }
     var vehicleDropdownExpanded by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
 
@@ -55,14 +62,27 @@ fun JoinDeliveryDriverDialog(
             Button(
                 onClick = {
                     val trimmedName = fullName.trim()
-                    val trimmedPhone = phone.trim()
+                    val validPhones = driverPhones.filter { it.number.trim().isNotBlank() }
+                        .map { it.copy(number = it.number.trim()) }
+                    if (selectedVehicle == DeliveryVehicleType.OTHER &&
+                        selectedCustomVehicle == null &&
+                        customVehicleDraft.trim().isNotBlank()
+                    ) {
+                        val newVeh = customVehicleDraft.trim()
+                        CustomOptionsPrefs.addCustomOption(context, CustomOptionsPrefs.KEY_VEHICLE_TYPES, newVeh)
+                        customVehicles = CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_VEHICLE_TYPES)
+                        selectedCustomVehicle = newVeh
+                    }
                     when {
                         trimmedName.length < 2 ->
                             validationError = "يرجى إدخال الاسم الكامل (حرفين على الأقل)"
-                        trimmedPhone.length < 4 ->
+                        validPhones.none { it.number.length >= 4 } ->
                             validationError = "يرجى إدخال رقم هاتف صحيح للتواصل"
+                        selectedVehicle == DeliveryVehicleType.OTHER && selectedCustomVehicle == null ->
+                            validationError = "يرجى كتابة نوع المركبة الجديد وحفظه"
                         else -> {
-                            onSubmitDriver(trimmedName, trimmedPhone, selectedVehicle)
+                            val vehicleLabel = selectedCustomVehicle ?: selectedVehicle.arabicLabel
+                            onSubmitDriver(trimmedName, validPhones, vehicleLabel)
                             onDismiss()
                         }
                     }
@@ -125,76 +145,125 @@ fun JoinDeliveryDriverDialog(
                     .testTag("driver_full_name_input")
             )
 
-            OutlinedTextField(
-                value = phone,
-                onValueChange = {
-                    if (it.length <= 25) phone = it
+            MultiplePhoneInputField(
+                phones = driverPhones,
+                onPhonesChange = {
+                    driverPhones = it
                     validationError = null
                 },
-                label = { Text("رقم الهاتف *") },
-                placeholder = { Text("09XXXXXXXX") },
-                leadingIcon = {
-                    Icon(Icons.Filled.Phone, contentDescription = null)
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("driver_phone_input")
+                label = "رقم الهاتف *",
+                firstFieldTestTag = "driver_phone_input"
             )
 
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "نوع المركبة *",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
+            Text(
+                text = "نوع المركبة *",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
+
+            ExposedDropdownMenuBox(
+                expanded = vehicleDropdownExpanded,
+                onExpandedChange = { vehicleDropdownExpanded = !vehicleDropdownExpanded }
+            ) {
+                OutlinedTextField(
+                    value = selectedCustomVehicle ?: selectedVehicle.arabicLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (selectedCustomVehicle != null) {
+                                Icons.Filled.LocalShipping
+                            } else {
+                                deliveryVehicleIcon(selectedVehicle)
+                            },
+                            contentDescription = null
+                        )
+                    },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = vehicleDropdownExpanded)
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth()
+                        .testTag("driver_vehicle_dropdown")
                 )
-                ExposedDropdownMenuBox(
+                ExposedDropdownMenu(
                     expanded = vehicleDropdownExpanded,
-                    onExpandedChange = { vehicleDropdownExpanded = !vehicleDropdownExpanded }
+                    onDismissRequest = { vehicleDropdownExpanded = false }
                 ) {
-                    OutlinedTextField(
-                        value = selectedVehicle.arabicLabel,
-                        onValueChange = {},
-                        readOnly = true,
+                    DeliveryVehicleType.entries.filter { it != DeliveryVehicleType.OTHER }.forEach { vehicle ->
+                        DropdownMenuItem(
+                            text = { Text("${vehicle.arabicLabel} (${vehicle.capacityHint})") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = deliveryVehicleIcon(vehicle),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                selectedVehicle = vehicle
+                                selectedCustomVehicle = null
+                                vehicleDropdownExpanded = false
+                                validationError = null
+                            },
+                            modifier = Modifier.testTag("driver_vehicle_option_${vehicle.name.lowercase()}")
+                        )
+                    }
+                    customVehicles.forEachIndexed { idx, customVeh ->
+                        DropdownMenuItem(
+                            text = { Text(customVeh) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.LocalShipping,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                selectedVehicle = DeliveryVehicleType.OTHER
+                                selectedCustomVehicle = customVeh
+                                vehicleDropdownExpanded = false
+                                validationError = null
+                            },
+                            modifier = Modifier.testTag("driver_vehicle_custom_$idx")
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(DeliveryVehicleType.OTHER.arabicLabel) },
                         leadingIcon = {
                             Icon(
-                                imageVector = deliveryVehicleIcon(selectedVehicle),
-                                contentDescription = null
+                                imageVector = Icons.Filled.LocalShipping,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
                             )
                         },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = vehicleDropdownExpanded)
+                        onClick = {
+                            selectedVehicle = DeliveryVehicleType.OTHER
+                            selectedCustomVehicle = null
+                            vehicleDropdownExpanded = false
+                            validationError = null
                         },
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth()
-                            .testTag("driver_vehicle_dropdown")
+                        modifier = Modifier.testTag("driver_vehicle_option_other")
                     )
-                    ExposedDropdownMenu(
-                        expanded = vehicleDropdownExpanded,
-                        onDismissRequest = { vehicleDropdownExpanded = false }
-                    ) {
-                        DeliveryVehicleType.entries.forEach { vehicle ->
-                            DropdownMenuItem(
-                                text = { Text(vehicle.arabicLabel) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = deliveryVehicleIcon(vehicle),
-                                        contentDescription = null
-                                    )
-                                },
-                                onClick = {
-                                    selectedVehicle = vehicle
-                                    vehicleDropdownExpanded = false
-                                },
-                                modifier = Modifier.testTag("driver_vehicle_option_${vehicle.name.lowercase()}")
-                            )
-                        }
-                    }
                 }
+            }
+
+            if (selectedVehicle == DeliveryVehicleType.OTHER && selectedCustomVehicle == null) {
+                CustomOptionInputRow(
+                    prefKey = CustomOptionsPrefs.KEY_VEHICLE_TYPES,
+                    onCustomAdded = { newVeh ->
+                        customVehicles = CustomOptionsPrefs.getCustomOptions(
+                            context,
+                            CustomOptionsPrefs.KEY_VEHICLE_TYPES
+                        )
+                        selectedVehicle = DeliveryVehicleType.OTHER
+                        selectedCustomVehicle = newVeh
+                        validationError = null
+                    },
+                    onDraftChange = { customVehicleDraft = it }
+                )
             }
 
             validationError?.let { msg ->

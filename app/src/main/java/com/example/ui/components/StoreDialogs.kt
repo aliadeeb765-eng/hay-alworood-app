@@ -47,8 +47,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.model.NeighborhoodStore
+import com.example.data.model.PhoneEntry
 import com.example.data.model.StoreCategory
 import com.example.data.model.StoreReview
+import com.example.data.model.formatPhonesForDisplay
 import com.example.data.model.formatRatingScore
 import com.example.ui.theme.DamaskGold
 import com.example.ui.theme.DamaskGoldContainer
@@ -138,11 +140,22 @@ fun RegisterStoreDialog(
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf(StoreCategory.CLOTHING) }
     var sector by remember { mutableStateOf(defaultSector) }
-    var phone by remember { mutableStateOf("") }
+    var storePhones by remember { mutableStateOf(listOf(com.example.data.model.PhoneEntry("", "موبايل"))) }
     var whatsappPhone by remember { mutableStateOf("") }
     var workingHours by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var validationError by remember { mutableStateOf<String?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var customStoreCats by remember {
+        mutableStateOf(
+            com.example.data.local.CustomOptionsPrefs.getCustomOptions(
+                context,
+                com.example.data.local.CustomOptionsPrefs.KEY_STORE_CATS
+            )
+        )
+    }
+    var selectedCustomCategory by remember { mutableStateOf<String?>(null) }
+    var customCategoryDraft by remember { mutableStateOf("") }
 
     InAppModalDialog(
         title = "تسجيل محل تجاري في الحي",
@@ -151,19 +164,41 @@ fun RegisterStoreDialog(
             Button(
                 onClick = {
                     val trimmedName = name.trim()
-                    val trimmedPhone = phone.trim()
+                    val primaryPhone = storePhones.firstOrNull { it.number.isNotBlank() }?.number?.trim().orEmpty()
+                    val formattedPhones = PhoneEntry.formatForDisplay(storePhones)
+                    if (category == StoreCategory.OTHER && selectedCustomCategory == null && customCategoryDraft.trim().isNotBlank()) {
+                        val newCat = customCategoryDraft.trim()
+                        com.example.data.local.CustomOptionsPrefs.addCustomOption(
+                            context,
+                            com.example.data.local.CustomOptionsPrefs.KEY_STORE_CATS,
+                            newCat
+                        )
+                        customStoreCats = com.example.data.local.CustomOptionsPrefs.getCustomOptions(
+                            context,
+                            com.example.data.local.CustomOptionsPrefs.KEY_STORE_CATS
+                        )
+                        selectedCustomCategory = newCat
+                    }
                     when {
                         trimmedName.length < 2 -> validationError = "يرجى إدخال اسم محل من حرفين على الأقل"
-                        trimmedPhone.length < 4 -> validationError = "يرجى إدخال رقم هاتف صحيح"
+                        primaryPhone.length < 4 -> validationError = "يرجى إدخال رقم هاتف صحيح"
                         else -> {
+                            val finalDescription = buildString {
+                                selectedCustomCategory?.let { append("تصنيف: $it") }
+                                val descTrimmed = description.trim()
+                                if (descTrimmed.isNotBlank()) {
+                                    if (isNotEmpty()) append(" • ")
+                                    append(descTrimmed)
+                                }
+                            }.takeIf { it.isNotBlank() }
                             onSubmit(
                                 trimmedName,
                                 category,
                                 sector,
-                                trimmedPhone,
-                                whatsappPhone,
-                                workingHours,
-                                description
+                                formattedPhones,
+                                whatsappPhone.takeIf { it.isNotBlank() },
+                                workingHours.takeIf { it.isNotBlank() },
+                                finalDescription
                             )
                             onDismiss()
                         }
@@ -200,25 +235,57 @@ fun RegisterStoreDialog(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                StoreCategory.entries.forEach { cat ->
+                StoreCategory.entries.filter { it != StoreCategory.OTHER }.forEach { cat ->
                     FilterChip(
-                        selected = category == cat,
-                        onClick = { category = cat },
+                        selected = category == cat && selectedCustomCategory == null,
+                        onClick = {
+                            category = cat
+                            selectedCustomCategory = null
+                        },
                         label = { Text(cat.arabicName) }
                     )
                 }
+                customStoreCats.forEach { customCat ->
+                    FilterChip(
+                        selected = category == StoreCategory.OTHER && selectedCustomCategory == customCat,
+                        onClick = {
+                            category = StoreCategory.OTHER
+                            selectedCustomCategory = customCat
+                        },
+                        label = { Text(customCat) }
+                    )
+                }
+                FilterChip(
+                    selected = category == StoreCategory.OTHER && selectedCustomCategory == null,
+                    onClick = {
+                        category = StoreCategory.OTHER
+                        selectedCustomCategory = null
+                    },
+                    label = { Text(StoreCategory.OTHER.arabicName) },
+                    modifier = Modifier.testTag("store_category_other_chip")
+                )
             }
 
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { if (it.length <= 30) phone = it; validationError = null },
-                label = { Text("رقم هاتف المحل *") },
-                placeholder = { Text("09XXXXXXXX") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("store_phone_input")
+            if (category == StoreCategory.OTHER && selectedCustomCategory == null) {
+                CustomOptionInputRow(
+                    prefKey = com.example.data.local.CustomOptionsPrefs.KEY_STORE_CATS,
+                    onCustomAdded = { newCat ->
+                        customStoreCats = com.example.data.local.CustomOptionsPrefs.getCustomOptions(
+                            context,
+                            com.example.data.local.CustomOptionsPrefs.KEY_STORE_CATS
+                        )
+                        category = StoreCategory.OTHER
+                        selectedCustomCategory = newCat
+                    },
+                    onDraftChange = { customCategoryDraft = it }
+                )
+            }
+
+            MultiplePhoneInputField(
+                phones = storePhones,
+                onPhonesChange = { storePhones = it; validationError = null },
+                label = "رقم هاتف المحل *",
+                firstFieldTestTag = "store_phone_input"
             )
 
             OutlinedTextField(

@@ -27,11 +27,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AirportShuttle
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BakeryDining
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Checkroom
@@ -51,7 +53,9 @@ import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PersonOutline
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Plumbing
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.ShoppingBag
@@ -66,18 +70,33 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -100,8 +119,23 @@ import com.example.ui.theme.StatusScheduledBlue
 import com.google.firebase.Timestamp
 import java.util.concurrent.TimeUnit
 
+private fun extractPrimaryPhoneSegment(phone: String, preferMobile: Boolean = false): String {
+    val segments = phone.split("•", ",", "||", "|", "\n")
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+    if (segments.isEmpty()) return ""
+    if (preferMobile) {
+        val mobileSeg = segments.firstOrNull { seg ->
+            seg.contains("موبايل") || seg.filter { it.isDigit() }.startsWith("09")
+        }
+        if (mobileSeg != null) return mobileSeg
+    }
+    return segments.first()
+}
+
 fun dialPhoneNumber(context: Context, phone: String) {
-    val sanitized = phone.filter { it.isDigit() || it == '+' }
+    val firstSegment = extractPrimaryPhoneSegment(phone, preferMobile = false)
+    val sanitized = firstSegment.filter { it.isDigit() || it == '+' }
     if (sanitized.isBlank()) {
         Toast.makeText(context, "رقم الهاتف غير متوفر", Toast.LENGTH_SHORT).show()
         return
@@ -118,7 +152,8 @@ fun dialPhoneNumber(context: Context, phone: String) {
 }
 
 fun openWhatsAppMessage(context: Context, phone: String, message: String) {
-    val digits = phone.mapNotNull { ch ->
+    val firstSegment = extractPrimaryPhoneSegment(phone, preferMobile = true)
+    val digits = firstSegment.mapNotNull { ch ->
         if (ch.isDigit()) ('0' + ch.digitToInt()) else null
     }.joinToString("")
     val normalized = when {
@@ -138,7 +173,7 @@ fun openWhatsAppMessage(context: Context, phone: String, message: String) {
         }
         context.startActivity(intent)
     } catch (_: Exception) {
-        dialPhoneNumber(context, phone)
+        dialPhoneNumber(context, firstSegment)
     }
 }
 
@@ -212,6 +247,7 @@ fun deliveryVehicleIcon(vehicle: DeliveryVehicleType): ImageVector = when (vehic
     DeliveryVehicleType.VAN -> Icons.Filled.AirportShuttle
     DeliveryVehicleType.PICKUP -> Icons.Filled.LocalShipping
     DeliveryVehicleType.TRUCK -> Icons.Filled.LocalShipping
+    DeliveryVehicleType.OTHER -> Icons.Filled.LocalShipping
 }
 
 @Composable
@@ -595,4 +631,197 @@ fun GuestModeBanner(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MultiplePhoneInputField(
+    phones: List<com.example.data.model.PhoneEntry>,
+    onPhonesChange: (List<com.example.data.model.PhoneEntry>) -> Unit,
+    label: String = "رقم الهاتف *",
+    firstFieldTestTag: String = "phone_input",
+    modifier: Modifier = Modifier
+) {
+    val list = if (phones.isEmpty()) listOf(com.example.data.model.PhoneEntry("", "موبايل")) else phones
+
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        list.forEachIndexed { index, entry ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = entry.number,
+                    onValueChange = { newVal ->
+                        if (newVal.length <= 30) {
+                            val updated = list.toMutableList()
+                            updated[index] = entry.copy(number = newVal)
+                            onPhonesChange(updated)
+                        }
+                    },
+                    label = { Text(if (index == 0) label else "رقم إضافي #${index + 1}") },
+                    placeholder = { Text(if (entry.type == "موبايل") "09XXXXXXXX" else "011XXXXXXX") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (entry.type == "موبايل") Icons.Filled.Phone else Icons.Filled.Call,
+                            contentDescription = null
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(if (index == 0) firstFieldTestTag else "${firstFieldTestTag}_$index")
+                )
+
+                var typeDropdownExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = typeDropdownExpanded,
+                    onExpandedChange = { typeDropdownExpanded = !typeDropdownExpanded },
+                    modifier = Modifier.width(114.dp)
+                ) {
+                    OutlinedTextField(
+                        value = entry.type,
+                        onValueChange = {},
+                        readOnly = true,
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.labelMedium,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeDropdownExpanded) },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth()
+                            .testTag("${firstFieldTestTag}_type_$index")
+                    )
+                    ExposedDropdownMenu(
+                        expanded = typeDropdownExpanded,
+                        onDismissRequest = { typeDropdownExpanded = false }
+                    ) {
+                        listOf("موبايل", "هاتف أرضي").forEach { t ->
+                            DropdownMenuItem(
+                                text = { Text(t) },
+                                onClick = {
+                                    val updated = list.toMutableList()
+                                    updated[index] = entry.copy(type = t)
+                                    onPhonesChange(updated)
+                                    typeDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (index == 0) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                val updated = list.toMutableList()
+                                updated.add(com.example.data.model.PhoneEntry("", "موبايل"))
+                                onPhonesChange(updated)
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("${firstFieldTestTag}_add_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = "إضافة رقم جديد",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                val updated = list.toMutableList()
+                                updated.removeAt(index)
+                                onPhonesChange(updated)
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("${firstFieldTestTag}_remove_button_$index")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Remove,
+                                contentDescription = "حذف الرقم",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CustomOptionInputRow(
+    prefKey: String,
+    onCustomAdded: (String) -> Unit,
+    onDraftChange: (String) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    var customText by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = customText,
+                onValueChange = {
+                    if (it.length <= 50) {
+                        customText = it
+                        onDraftChange(it)
+                    }
+                },
+                label = { Text("اكتب التسمية أو التصنيف الجديد...") },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("custom_option_input_$prefKey")
+            )
+            Button(
+                onClick = {
+                    val trimmed = customText.trim()
+                    if (trimmed.isNotBlank()) {
+                        com.example.data.local.CustomOptionsPrefs.addCustomOption(context, prefKey, trimmed)
+                        onCustomAdded(trimmed)
+                        customText = ""
+                        onDraftChange("")
+                    }
+                },
+                enabled = customText.trim().isNotBlank(),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("save_custom_option_button_$prefKey")
+            ) {
+                Text("حفظ", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
 

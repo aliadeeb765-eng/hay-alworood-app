@@ -90,10 +90,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.local.CustomOptionsPrefs
 import com.example.data.local.DeliveryCustomerPrefs
 import com.example.data.location.LocationHelper
 import com.example.data.model.DELIVERY_ADMIN_WHATSAPP_PHONE
@@ -104,8 +104,11 @@ import com.example.data.model.DeliveryRequest
 import com.example.data.model.DeliveryStatus
 import com.example.data.model.DeliveryVehicleType
 import com.example.data.model.DeliveryZone
+import com.example.data.model.PhoneEntry
 import com.example.data.model.buildDeliveryOrderWhatsAppMessage
 import com.example.data.model.calculateEstimatedDeliveryFare
+import com.example.ui.components.CustomOptionInputRow
+import com.example.ui.components.MultiplePhoneInputField
 import com.example.ui.components.deliveryVehicleIcon
 import com.example.ui.components.dialPhoneNumber
 import com.example.ui.components.openWhatsAppMessage
@@ -157,17 +160,36 @@ fun DeliveryScreen(
     val listState = rememberLazyListState()
 
     var selectedOrderType by rememberSaveable { mutableStateOf(DeliveryOrderType.GROCERY) }
+    var customOrderTypes by remember {
+        mutableStateOf(CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_ORDER_TYPES))
+    }
+    var selectedCustomOrderType by rememberSaveable { mutableStateOf<String?>(null) }
+    var customOrderTypeDraft by rememberSaveable { mutableStateOf("") }
+
     var selectedVehicleType by rememberSaveable { mutableStateOf(DeliveryVehicleType.MOTORCYCLE) }
+    var customVehicleTypes by remember {
+        mutableStateOf(CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_VEHICLE_TYPES))
+    }
+    var selectedCustomVehicleType by rememberSaveable { mutableStateOf<String?>(null) }
+    var customVehicleTypeDraft by rememberSaveable { mutableStateOf("") }
+
     var pickupLocation by rememberSaveable { mutableStateOf("") }
     var orderDetails by rememberSaveable { mutableStateOf("") }
+
     var selectedDeliveryZone by rememberSaveable { mutableStateOf(DeliveryZone.INSIDE_HAY_AL_WURUD) }
+    var customDeliveryZones by remember {
+        mutableStateOf(CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_DELIVERY_ZONES))
+    }
+    var selectedCustomZone by rememberSaveable { mutableStateOf<String?>(null) }
+    var customZoneDraft by rememberSaveable { mutableStateOf("") }
     var zoneDropdownExpanded by remember { mutableStateOf(false) }
+
     var detailedAddress by rememberSaveable { mutableStateOf("") }
     var gpsMapsUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var isFetchingGps by remember { mutableStateOf(false) }
     var gpsErrorMessage by remember { mutableStateOf<String?>(null) }
     var customerName by rememberSaveable { mutableStateOf(defaultCustomerName) }
-    var customerPhone by rememberSaveable { mutableStateOf("") }
+    var customerPhones by remember { mutableStateOf(listOf(PhoneEntry("", "موبايل"))) }
     var hasSavedCustomerData by remember { mutableStateOf(false) }
     var prefsLoaded by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
@@ -177,8 +199,15 @@ fun DeliveryScreen(
         val saved = DeliveryCustomerPrefs.readSavedCustomerInfo(context)
         if (saved.hasSavedData) {
             if (saved.customerName.isNotBlank()) customerName = saved.customerName
-            if (saved.customerPhone.isNotBlank()) customerPhone = saved.customerPhone
+            if (saved.phones.isNotEmpty()) {
+                customerPhones = saved.phones
+            } else if (saved.customerPhone.isNotBlank()) {
+                customerPhones = listOf(PhoneEntry(saved.customerPhone, "موبايل"))
+            }
             selectedDeliveryZone = saved.deliveryZone
+            selectedCustomZone = saved.customZoneLabel.takeIf {
+                it.isNotBlank() && saved.deliveryZone == DeliveryZone.OTHER
+            }
             if (saved.detailedAddress.isNotBlank()) detailedAddress = saved.detailedAddress
             hasSavedCustomerData = true
         }
@@ -189,6 +218,7 @@ fun DeliveryScreen(
         if (prefill != null) {
             pickupLocation = prefill.pickupLocation
             selectedOrderType = prefill.orderType
+            selectedCustomOrderType = null
             prefillNoticeStore = prefill.pickupLocation
             validationError = null
             onPrefillConsumed()
@@ -404,11 +434,14 @@ fun DeliveryScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.testTag("delivery_order_type_group")
                         ) {
-                            DeliveryOrderType.entries.forEach { type ->
-                                val selected = selectedOrderType == type
+                            DeliveryOrderType.entries.filter { it != DeliveryOrderType.OTHER }.forEach { type ->
+                                val selected = selectedOrderType == type && selectedCustomOrderType == null
                                 FilterChip(
                                     selected = selected,
-                                    onClick = { selectedOrderType = type },
+                                    onClick = {
+                                        selectedOrderType = type
+                                        selectedCustomOrderType = null
+                                    },
                                     label = { Text(type.arabicLabel) },
                                     leadingIcon = {
                                         Icon(
@@ -424,6 +457,66 @@ fun DeliveryScreen(
                                     modifier = Modifier.testTag("order_type_${type.name.lowercase()}")
                                 )
                             }
+                            customOrderTypes.forEachIndexed { idx, customType ->
+                                val selected = selectedOrderType == DeliveryOrderType.OTHER &&
+                                    selectedCustomOrderType == customType
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = {
+                                        selectedOrderType = DeliveryOrderType.OTHER
+                                        selectedCustomOrderType = customType
+                                    },
+                                    label = { Text(customType) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Filled.LocalOffer,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    ),
+                                    modifier = Modifier.testTag("order_type_custom_$idx")
+                                )
+                            }
+                            val otherSelected = selectedOrderType == DeliveryOrderType.OTHER &&
+                                selectedCustomOrderType == null
+                            FilterChip(
+                                selected = otherSelected,
+                                onClick = {
+                                    selectedOrderType = DeliveryOrderType.OTHER
+                                    selectedCustomOrderType = null
+                                },
+                                label = { Text(DeliveryOrderType.OTHER.arabicLabel) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = orderTypeIcon(DeliveryOrderType.OTHER),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                modifier = Modifier.testTag("order_type_other")
+                            )
+                        }
+                        if (selectedOrderType == DeliveryOrderType.OTHER && selectedCustomOrderType == null) {
+                            CustomOptionInputRow(
+                                prefKey = CustomOptionsPrefs.KEY_ORDER_TYPES,
+                                onCustomAdded = { newType ->
+                                    customOrderTypes = CustomOptionsPrefs.getCustomOptions(
+                                        context,
+                                        CustomOptionsPrefs.KEY_ORDER_TYPES
+                                    )
+                                    selectedOrderType = DeliveryOrderType.OTHER
+                                    selectedCustomOrderType = newType
+                                },
+                                onDraftChange = { customOrderTypeDraft = it }
+                            )
                         }
                     }
 
@@ -434,7 +527,16 @@ fun DeliveryScreen(
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold
                         )
-                        val vehicleRows = DeliveryVehicleType.entries.chunked(2)
+                        val vehicleChoices = buildList {
+                            DeliveryVehicleType.entries
+                                .filter { it != DeliveryVehicleType.OTHER }
+                                .forEach { add(VehicleGridChoice.Standard(it)) }
+                            customVehicleTypes.forEachIndexed { idx, label ->
+                                add(VehicleGridChoice.Custom(idx, label))
+                            }
+                            add(VehicleGridChoice.Standard(DeliveryVehicleType.OTHER))
+                        }
+                        val vehicleRows = vehicleChoices.chunked(2)
                         Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.testTag("delivery_vehicle_grid")
@@ -444,20 +546,64 @@ fun DeliveryScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    rowItems.forEach { vehicle ->
-                                        val selected = selectedVehicleType == vehicle
-                                        VehicleSelectionCard(
-                                            vehicle = vehicle,
-                                            selected = selected,
-                                            onClick = { selectedVehicleType = vehicle },
-                                            modifier = Modifier.weight(1f)
-                                        )
+                                    rowItems.forEach { itemChoice ->
+                                        when (itemChoice) {
+                                            is VehicleGridChoice.Standard -> {
+                                                val v = itemChoice.vehicle
+                                                val selected = selectedVehicleType == v &&
+                                                    selectedCustomVehicleType == null
+                                                VehicleSelectionCard(
+                                                    title = v.arabicLabel,
+                                                    hint = v.capacityHint,
+                                                    icon = deliveryVehicleIcon(v),
+                                                    selected = selected,
+                                                    onClick = {
+                                                        selectedVehicleType = v
+                                                        selectedCustomVehicleType = null
+                                                    },
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .testTag("vehicle_${v.name.lowercase()}")
+                                                )
+                                            }
+                                            is VehicleGridChoice.Custom -> {
+                                                val selected = selectedVehicleType == DeliveryVehicleType.OTHER &&
+                                                    selectedCustomVehicleType == itemChoice.label
+                                                VehicleSelectionCard(
+                                                    title = itemChoice.label,
+                                                    hint = "مركبة مخصصة",
+                                                    icon = Icons.Filled.LocalShipping,
+                                                    selected = selected,
+                                                    onClick = {
+                                                        selectedVehicleType = DeliveryVehicleType.OTHER
+                                                        selectedCustomVehicleType = itemChoice.label
+                                                    },
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .testTag("vehicle_custom_${itemChoice.index}")
+                                                )
+                                            }
+                                        }
                                     }
                                     if (rowItems.size == 1) {
                                         Spacer(Modifier.weight(1f))
                                     }
                                 }
                             }
+                        }
+                        if (selectedVehicleType == DeliveryVehicleType.OTHER && selectedCustomVehicleType == null) {
+                            CustomOptionInputRow(
+                                prefKey = CustomOptionsPrefs.KEY_VEHICLE_TYPES,
+                                onCustomAdded = { newVeh ->
+                                    customVehicleTypes = CustomOptionsPrefs.getCustomOptions(
+                                        context,
+                                        CustomOptionsPrefs.KEY_VEHICLE_TYPES
+                                    )
+                                    selectedVehicleType = DeliveryVehicleType.OTHER
+                                    selectedCustomVehicleType = newVeh
+                                },
+                                onDraftChange = { customVehicleTypeDraft = it }
+                            )
                         }
                     }
 
@@ -498,7 +644,7 @@ fun DeliveryScreen(
                     )
 
                     // 2e. Delivery Zone Dropdown
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = "منطقة التوصيل *",
                             style = MaterialTheme.typography.labelLarge,
@@ -509,7 +655,7 @@ fun DeliveryScreen(
                             onExpandedChange = { zoneDropdownExpanded = !zoneDropdownExpanded }
                         ) {
                             OutlinedTextField(
-                                value = selectedDeliveryZone.arabicLabel,
+                                value = selectedCustomZone ?: selectedDeliveryZone.arabicLabel,
                                 onValueChange = {},
                                 readOnly = true,
                                 leadingIcon = {
@@ -528,17 +674,53 @@ fun DeliveryScreen(
                                 expanded = zoneDropdownExpanded,
                                 onDismissRequest = { zoneDropdownExpanded = false }
                             ) {
-                                DeliveryZone.entries.forEach { zone ->
+                                DeliveryZone.entries.filter { it != DeliveryZone.OTHER }.forEach { zone ->
                                     DropdownMenuItem(
                                         text = { Text(zone.arabicLabel) },
                                         onClick = {
                                             selectedDeliveryZone = zone
+                                            selectedCustomZone = null
                                             zoneDropdownExpanded = false
                                         },
                                         modifier = Modifier.testTag("delivery_zone_option_${zone.name.lowercase()}")
                                     )
                                 }
+                                customDeliveryZones.forEachIndexed { idx, customZone ->
+                                    DropdownMenuItem(
+                                        text = { Text(customZone) },
+                                        onClick = {
+                                            selectedDeliveryZone = DeliveryZone.OTHER
+                                            selectedCustomZone = customZone
+                                            zoneDropdownExpanded = false
+                                        },
+                                        modifier = Modifier.testTag("delivery_zone_custom_$idx")
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text(DeliveryZone.OTHER.arabicLabel) },
+                                    onClick = {
+                                        selectedDeliveryZone = DeliveryZone.OTHER
+                                        selectedCustomZone = null
+                                        zoneDropdownExpanded = false
+                                    },
+                                    modifier = Modifier.testTag("delivery_zone_option_other")
+                                )
                             }
+                        }
+
+                        if (selectedDeliveryZone == DeliveryZone.OTHER && selectedCustomZone == null) {
+                            CustomOptionInputRow(
+                                prefKey = CustomOptionsPrefs.KEY_DELIVERY_ZONES,
+                                onCustomAdded = { newZone ->
+                                    customDeliveryZones = CustomOptionsPrefs.getCustomOptions(
+                                        context,
+                                        CustomOptionsPrefs.KEY_DELIVERY_ZONES
+                                    )
+                                    selectedDeliveryZone = DeliveryZone.OTHER
+                                    selectedCustomZone = newZone
+                                },
+                                onDraftChange = { customZoneDraft = it }
+                            )
                         }
                     }
 
@@ -678,78 +860,32 @@ fun DeliveryScreen(
                         }
                     }
 
-                    // 2g. Customer Name & Phone Number (Responsive)
-                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                        if (maxWidth >= 460.dp) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = customerName,
-                                    onValueChange = {
-                                        if (it.length <= 80) customerName = it
-                                        validationError = null
-                                    },
-                                    label = { Text("اسم العميل *") },
-                                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("customer_name_input")
-                                )
-                                OutlinedTextField(
-                                    value = customerPhone,
-                                    onValueChange = {
-                                        if (it.length <= 30) customerPhone = it
-                                        validationError = null
-                                    },
-                                    label = { Text("رقم الهاتف *") },
-                                    placeholder = { Text("09XXXXXXXX") },
-                                    leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("customer_phone_input")
-                                )
-                            }
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                OutlinedTextField(
-                                    value = customerName,
-                                    onValueChange = {
-                                        if (it.length <= 80) customerName = it
-                                        validationError = null
-                                    },
-                                    label = { Text("اسم العميل *") },
-                                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("customer_name_input")
-                                )
-                                OutlinedTextField(
-                                    value = customerPhone,
-                                    onValueChange = {
-                                        if (it.length <= 30) customerPhone = it
-                                        validationError = null
-                                    },
-                                    label = { Text("رقم الهاتف *") },
-                                    placeholder = { Text("09XXXXXXXX") },
-                                    leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("customer_phone_input")
-                                )
-                            }
-                        }
+                    // 2g. Customer Name & Multiple Phone Numbers
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = customerName,
+                            onValueChange = {
+                                if (it.length <= 80) customerName = it
+                                validationError = null
+                            },
+                            label = { Text("اسم العميل *") },
+                            leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("customer_name_input")
+                        )
+
+                        MultiplePhoneInputField(
+                            phones = customerPhones,
+                            onPhonesChange = {
+                                customerPhones = it
+                                validationError = null
+                            },
+                            label = "رقم الهاتف *",
+                            firstFieldTestTag = "customer_phone_input"
+                        )
                     }
 
                     if (hasSavedCustomerData) {
@@ -777,8 +913,9 @@ fun DeliveryScreen(
                                     onClick = {
                                         DeliveryCustomerPrefs.clearCustomerInfoAsync(context)
                                         customerName = ""
-                                        customerPhone = ""
+                                        customerPhones = listOf(PhoneEntry("", "موبايل"))
                                         selectedDeliveryZone = DeliveryZone.INSIDE_HAY_AL_WURUD
+                                        selectedCustomZone = null
                                         detailedAddress = ""
                                         hasSavedCustomerData = false
                                         validationError = null
@@ -807,12 +944,22 @@ fun DeliveryScreen(
                     }
 
                     // 2g-bis. Instant Estimated Fare Calculator Card
-                    val fareEstimate = remember(selectedVehicleType, selectedDeliveryZone) {
-                        calculateEstimatedDeliveryFare(selectedVehicleType, selectedDeliveryZone)
+                    val effectiveVehicleForFare = if (selectedCustomVehicleType != null) {
+                        DeliveryVehicleType.OTHER
+                    } else {
+                        selectedVehicleType
+                    }
+                    val effectiveZoneForFare = if (selectedCustomZone != null) {
+                        DeliveryZone.OTHER
+                    } else {
+                        selectedDeliveryZone
+                    }
+                    val fareEstimate = remember(effectiveVehicleForFare, effectiveZoneForFare) {
+                        calculateEstimatedDeliveryFare(effectiveVehicleForFare, effectiveZoneForFare)
                     }
                     EstimatedFareCard(
-                        vehicleType = selectedVehicleType,
-                        deliveryZone = selectedDeliveryZone,
+                        vehicleLabel = selectedCustomVehicleType ?: selectedVehicleType.arabicLabel,
+                        zoneLabel = selectedCustomZone ?: selectedDeliveryZone.arabicLabel,
                         fareEstimate = fareEstimate
                     )
 
@@ -840,7 +987,42 @@ fun DeliveryScreen(
                             val trimmedDetails = orderDetails.trim()
                             val trimmedAddress = detailedAddress.trim()
                             val trimmedName = customerName.trim()
-                            val trimmedPhone = customerPhone.trim()
+                            val validPhones = customerPhones
+                                .filter { it.number.trim().isNotBlank() }
+                                .map { it.copy(number = it.number.trim()) }
+
+                            // Auto-save non-blank custom inputs if user pressed submit directly
+                            if (selectedOrderType == DeliveryOrderType.OTHER &&
+                                selectedCustomOrderType == null &&
+                                customOrderTypeDraft.trim().isNotBlank()
+                            ) {
+                                val newType = customOrderTypeDraft.trim()
+                                CustomOptionsPrefs.addCustomOption(context, CustomOptionsPrefs.KEY_ORDER_TYPES, newType)
+                                customOrderTypes = CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_ORDER_TYPES)
+                                selectedCustomOrderType = newType
+                                customOrderTypeDraft = ""
+                            }
+                            if (selectedVehicleType == DeliveryVehicleType.OTHER &&
+                                selectedCustomVehicleType == null &&
+                                customVehicleTypeDraft.trim().isNotBlank()
+                            ) {
+                                val newVeh = customVehicleTypeDraft.trim()
+                                CustomOptionsPrefs.addCustomOption(context, CustomOptionsPrefs.KEY_VEHICLE_TYPES, newVeh)
+                                customVehicleTypes = CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_VEHICLE_TYPES)
+                                selectedCustomVehicleType = newVeh
+                                customVehicleTypeDraft = ""
+                            }
+                            if (selectedDeliveryZone == DeliveryZone.OTHER &&
+                                selectedCustomZone == null &&
+                                customZoneDraft.trim().isNotBlank()
+                            ) {
+                                val newZone = customZoneDraft.trim()
+                                CustomOptionsPrefs.addCustomOption(context, CustomOptionsPrefs.KEY_DELIVERY_ZONES, newZone)
+                                customDeliveryZones = CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_DELIVERY_ZONES)
+                                selectedCustomZone = newZone
+                                customZoneDraft = ""
+                            }
+
                             when {
                                 trimmedPickup.length < 2 ->
                                     validationError = "يرجى إدخال مكان الاستلام (اسم المحل أو العنوان)"
@@ -850,28 +1032,38 @@ fun DeliveryScreen(
                                     validationError = "يرجى إدخال العنوان التفصيلي أو استخدام زر GPS"
                                 trimmedName.length < 2 ->
                                     validationError = "يرجى إدخال اسم العميل"
-                                trimmedPhone.length < 4 ->
+                                validPhones.none { it.number.length >= 4 } ->
                                     validationError = "يرجى إدخال رقم هاتف صحيح للتواصل"
                                 else -> {
+                                    val finalOrderTypeLabel = selectedCustomOrderType ?: selectedOrderType.arabicLabel
+                                    val finalVehicleLabel = selectedCustomVehicleType ?: selectedVehicleType.arabicLabel
+                                    val finalZoneLabel = selectedCustomZone ?: selectedDeliveryZone.arabicLabel
+                                    val finalFareEstimate = calculateEstimatedDeliveryFare(
+                                        if (selectedCustomVehicleType != null) DeliveryVehicleType.OTHER else selectedVehicleType,
+                                        if (selectedCustomZone != null) DeliveryZone.OTHER else selectedDeliveryZone
+                                    )
+                                    val formattedPhones = PhoneEntry.formatForDisplay(validPhones)
+
                                     DeliveryCustomerPrefs.saveCustomerInfoAsync(
                                         context = context,
                                         customerName = trimmedName,
-                                        customerPhone = trimmedPhone,
+                                        phones = validPhones,
                                         deliveryZone = selectedDeliveryZone,
-                                        detailedAddress = trimmedAddress
+                                        detailedAddress = trimmedAddress,
+                                        customZoneLabel = selectedCustomZone.orEmpty()
                                     )
                                     hasSavedCustomerData = true
                                     val whatsAppMessage = buildDeliveryOrderWhatsAppMessage(
-                                        orderType = selectedOrderType,
-                                        vehicleType = selectedVehicleType,
+                                        orderTypeLabel = finalOrderTypeLabel,
+                                        vehicleTypeLabel = finalVehicleLabel,
                                         pickupLocation = trimmedPickup,
                                         orderDetails = trimmedDetails,
-                                        deliveryZone = selectedDeliveryZone,
+                                        deliveryZoneLabel = finalZoneLabel,
                                         detailedAddress = trimmedAddress,
                                         gpsMapsUrl = gpsMapsUrl,
                                         customerName = trimmedName,
-                                        customerPhone = trimmedPhone,
-                                        fareEstimate = fareEstimate
+                                        customerPhones = validPhones,
+                                        fareEstimate = finalFareEstimate
                                     )
                                     onSubmitDeliveryRequest(
                                         selectedOrderType,
@@ -882,7 +1074,7 @@ fun DeliveryScreen(
                                         trimmedAddress,
                                         gpsMapsUrl,
                                         trimmedName,
-                                        trimmedPhone
+                                        formattedPhones
                                     )
                                     onOpenWhatsApp(
                                         context,
@@ -1021,9 +1213,16 @@ fun DeliveryScreen(
     }
 }
 
+private sealed interface VehicleGridChoice {
+    data class Standard(val vehicle: DeliveryVehicleType) : VehicleGridChoice
+    data class Custom(val index: Int, val label: String) : VehicleGridChoice
+}
+
 @Composable
 private fun VehicleSelectionCard(
-    vehicle: DeliveryVehicleType,
+    title: String,
+    hint: String,
+    icon: ImageVector,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -1032,8 +1231,7 @@ private fun VehicleSelectionCard(
         modifier = modifier
             .heightIn(min = 66.dp)
             .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .testTag("vehicle_${vehicle.name.lowercase()}"),
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
@@ -1059,8 +1257,8 @@ private fun VehicleSelectionCard(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = deliveryVehicleIcon(vehicle),
-                        contentDescription = vehicle.arabicLabel,
+                        imageVector = icon,
+                        contentDescription = title,
                         tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
@@ -1068,7 +1266,7 @@ private fun VehicleSelectionCard(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = vehicle.arabicLabel,
+                    text = title,
                     style = MaterialTheme.typography.labelLarge,
                     color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
@@ -1076,7 +1274,7 @@ private fun VehicleSelectionCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = vehicle.capacityHint,
+                    text = hint,
                     style = MaterialTheme.typography.labelSmall,
                     color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -1372,8 +1570,8 @@ private fun JoinDeliveryDriverSectionCard(
 
 @Composable
 private fun EstimatedFareCard(
-    vehicleType: DeliveryVehicleType,
-    deliveryZone: DeliveryZone,
+    vehicleLabel: String,
+    zoneLabel: String,
     fareEstimate: DeliveryFareEstimate
 ) {
     Card(
@@ -1421,7 +1619,7 @@ private fun EstimatedFareCard(
                             color = OnDamaskGoldContainer
                         )
                         Text(
-                            text = "${vehicleType.arabicLabel} • ${deliveryZone.arabicLabel}",
+                            text = "$vehicleLabel • $zoneLabel",
                             style = MaterialTheme.typography.labelSmall,
                             color = OnDamaskGoldContainer.copy(alpha = 0.8f)
                         )

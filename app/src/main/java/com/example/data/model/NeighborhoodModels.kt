@@ -401,11 +401,12 @@ enum class DeliveryVehicleType(val arabicLabel: String, val capacityHint: String
     SUZUKI("سوزوكي", "مناسب للأغراض المتوسطة"),
     VAN("فان", "مساحة مغلقة وآمنة"),
     PICKUP("بيك أب", "للأثاث والبضائع"),
-    TRUCK("شاحنة", "للنقل والحمولات الكبيرة");
+    TRUCK("شاحنة", "للنقل والحمولات الكبيرة"),
+    OTHER("أخرى", "مركبة مخصصة أخرى");
 
     companion object {
         fun fromRaw(raw: String): DeliveryVehicleType =
-            entries.firstOrNull { it.name == raw } ?: MOTORCYCLE
+            entries.firstOrNull { it.name == raw } ?: OTHER
     }
 }
 
@@ -414,11 +415,12 @@ enum class DeliveryZone(val arabicLabel: String) {
     QUDSAYA_SUBURB("ضاحية قدسيا"),
     QUDSAYA_TOWN("قدسيا البلد"),
     DUMMAR_PROJECT("مشروع دمر"),
-    OTHER_DAMASCUS("مناطق أخرى في دمشق");
+    OTHER_DAMASCUS("مناطق أخرى في دمشق"),
+    OTHER("أخرى");
 
     companion object {
         fun fromRaw(raw: String): DeliveryZone =
-            entries.firstOrNull { it.name == raw } ?: INSIDE_HAY_AL_WURUD
+            entries.firstOrNull { it.name == raw } ?: OTHER
     }
 }
 
@@ -510,6 +512,14 @@ fun calculateEstimatedDeliveryFare(
     vehicleType: DeliveryVehicleType,
     deliveryZone: DeliveryZone
 ): DeliveryFareEstimate {
+    if (vehicleType == DeliveryVehicleType.OTHER || deliveryZone == DeliveryZone.OTHER) {
+        return DeliveryFareEstimate(
+            headlinePrice = "يتم تحديد السعر بدقة بالاتفاق عبر واتساب",
+            isStartingEstimate = true,
+            zoneDetails = "تصنيف أو منطقة مخصصة عبر أخرى",
+            disclaimerNote = "السعر تقديري وقد يختلف حسب المسافة وعدد العمال والاتفاق"
+        )
+    }
     return when (vehicleType) {
         DeliveryVehicleType.MOTORCYCLE -> {
             val price = when (deliveryZone) {
@@ -518,6 +528,7 @@ fun calculateEstimatedDeliveryFare(
                 DeliveryZone.QUDSAYA_TOWN,
                 DeliveryZone.DUMMAR_PROJECT -> "15,000 ل.س"
                 DeliveryZone.OTHER_DAMASCUS -> "25,000 ل.س"
+                DeliveryZone.OTHER -> "يتم تحديد السعر بدقة بالاتفاق عبر واتساب"
             }
             DeliveryFareEstimate(
                 headlinePrice = price,
@@ -534,6 +545,7 @@ fun calculateEstimatedDeliveryFare(
                 DeliveryZone.QUDSAYA_TOWN,
                 DeliveryZone.DUMMAR_PROJECT -> "30,000 ل.س"
                 DeliveryZone.OTHER_DAMASCUS -> "45,000 ل.س"
+                DeliveryZone.OTHER -> "يتم تحديد السعر بدقة بالاتفاق عبر واتساب"
             }
             DeliveryFareEstimate(
                 headlinePrice = price,
@@ -585,8 +597,53 @@ fun calculateEstimatedDeliveryFare(
                 disclaimerNote = "السعر تقديري وقد يختلف حسب المسافة وعدد العمال"
             )
         }
+
+        DeliveryVehicleType.OTHER -> {
+            DeliveryFareEstimate(
+                headlinePrice = "يتم تحديد السعر بدقة بالاتفاق عبر واتساب",
+                isStartingEstimate = true,
+                zoneDetails = "تصنيف أو منطقة مخصصة عبر أخرى",
+                disclaimerNote = "السعر تقديري وقد يختلف حسب المسافة وعدد العمال والاتفاق"
+            )
+        }
     }
 }
+
+data class PhoneEntry(
+    val number: String,
+    val type: String = "موبايل"
+) {
+    fun serialize(): String = "$number|$type"
+    companion object {
+        fun deserialize(raw: String): PhoneEntry? {
+            val parts = raw.split("|")
+            if (parts.isEmpty()) return null
+            val num = parts[0].trim()
+            if (num.isBlank()) return null
+            val t = if (parts.size > 1 && parts[1].isNotBlank()) parts[1].trim() else "موبايل"
+            return PhoneEntry(num, t)
+        }
+        fun parseList(rawListStr: String): List<PhoneEntry> {
+            if (rawListStr.isBlank()) return emptyList()
+            return rawListStr.split("||").mapNotNull { deserialize(it) }
+        }
+        fun serializeList(list: List<PhoneEntry>): String {
+            return list.filter { it.number.isNotBlank() }.joinToString("||") { it.serialize() }
+        }
+        fun formatForDisplay(list: List<PhoneEntry>): String {
+            if (list.isEmpty()) return "غير متوفر"
+            return list.joinToString(" • ") { "${it.number} (${it.type})" }
+        }
+        fun formatForWhatsApp(list: List<PhoneEntry>): String {
+            if (list.isEmpty()) return "غير متوفر"
+            return list.joinToString(", ") { "${it.number} (${it.type})" }
+        }
+    }
+}
+
+fun List<PhoneEntry>.formatPhonesForDisplay(): String = PhoneEntry.formatForDisplay(this)
+
+fun List<PhoneEntry>.formatPhonesForWhatsApp(): String = PhoneEntry.formatForWhatsApp(this)
 
 /**
  * رقم واتساب الإدارة المسؤول عن استقبال طلبات التوصيل وطلبات انضمام السائقين.
@@ -595,28 +652,28 @@ fun calculateEstimatedDeliveryFare(
 const val DELIVERY_ADMIN_WHATSAPP_PHONE = "0933125102"
 
 fun buildDeliveryOrderWhatsAppMessage(
-    orderType: DeliveryOrderType,
-    vehicleType: DeliveryVehicleType,
+    orderTypeLabel: String,
+    vehicleTypeLabel: String,
     pickupLocation: String,
     orderDetails: String,
-    deliveryZone: DeliveryZone,
+    deliveryZoneLabel: String,
     detailedAddress: String,
     gpsMapsUrl: String?,
     customerName: String,
-    customerPhone: String,
+    customerPhones: List<PhoneEntry>,
     fareEstimate: DeliveryFareEstimate
 ): String = buildString {
     appendLine("📦 *طلب توصيل ونقل سريع - حي الورود*")
     appendLine("━━━━━━━━━━━━━━")
-    appendLine("• *نوع الطلب:* ${orderType.arabicLabel}")
-    appendLine("• *المركبة المطلوبة:* ${vehicleType.arabicLabel}")
+    appendLine("• *نوع الطلب:* $orderTypeLabel")
+    appendLine("• *المركبة المطلوبة:* $vehicleTypeLabel")
     appendLine("• *مكان الاستلام:* $pickupLocation")
     appendLine("• *تفاصيل الطلب:* $orderDetails")
-    appendLine("• *المنطقة:* ${deliveryZone.arabicLabel}")
+    appendLine("• *المنطقة:* $deliveryZoneLabel")
     appendLine("• *العنوان:* ${detailedAddress.ifBlank { "محدد عبر رابط GPS" }}")
     appendLine("• *رابط موقع الـ GPS:* ${gpsMapsUrl?.takeIf { it.isNotBlank() } ?: "غير مرفق"}")
     appendLine("• *اسم العميل:* $customerName")
-    appendLine("• *رقم العميل:* $customerPhone")
+    appendLine("• *أرقام العميل:* ${customerPhones.formatPhonesForWhatsApp()}")
     appendLine("• *التكلفة التقديرية المحسوبة:* ${fareEstimate.headlinePrice}")
     fareEstimate.disclaimerNote?.let { note ->
         appendLine("  ($note)")
@@ -626,14 +683,14 @@ fun buildDeliveryOrderWhatsAppMessage(
 
 fun buildDriverRegistrationWhatsAppMessage(
     fullName: String,
-    phone: String,
-    vehicleType: DeliveryVehicleType
+    phones: List<PhoneEntry>,
+    vehicleTypeLabel: String
 ): String = buildString {
     appendLine("🚚 *طلب انضمام كسائق توصيل أو نقل - حي الورود*")
     appendLine("━━━━━━━━━━━━━━")
     appendLine("• *الاسم الكامل:* $fullName")
-    appendLine("• *رقم الهاتف:* $phone")
-    appendLine("• *نوع المركبة:* ${vehicleType.arabicLabel}")
+    appendLine("• *أرقام التواصل:* ${phones.formatPhonesForWhatsApp()}")
+    appendLine("• *نوع المركبة:* $vehicleTypeLabel")
     append("━━━━━━━━━━━━━━")
 }
 

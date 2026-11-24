@@ -27,11 +27,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.example.data.local.CustomOptionsPrefs
 import com.example.data.model.HayAlWurudSectors
+import com.example.data.model.PhoneEntry
 import com.example.data.model.PostCategory
 import com.example.data.model.ServiceCategory
 import com.example.data.model.UtilityStatus
 import com.example.data.model.UtilityType
+import com.example.data.model.formatPhonesForDisplay
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun AddUtilityReportDialog(
@@ -143,10 +147,16 @@ fun AddServiceDialog(
     var category by remember { mutableStateOf(ServiceCategory.MAINTENANCE) }
     var specialty by remember { mutableStateOf("") }
     var sector by remember { mutableStateOf(defaultSector) }
-    var workPhone by remember { mutableStateOf("") }
+    var servicePhones by remember { mutableStateOf(listOf(PhoneEntry("", "موبايل"))) }
     var workingHours by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var validationError by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    var customServiceCats by remember {
+        mutableStateOf(CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_SERVICE_CATS))
+    }
+    var selectedCustomCategory by remember { mutableStateOf<String?>(null) }
+    var customCategoryDraft by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -179,13 +189,47 @@ fun AddServiceDialog(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ServiceCategory.entries.forEach { cat ->
+                    ServiceCategory.entries.filter { it != ServiceCategory.OTHER }.forEach { cat ->
                         FilterChip(
-                            selected = category == cat,
-                            onClick = { category = cat },
+                            selected = category == cat && selectedCustomCategory == null,
+                            onClick = {
+                                category = cat
+                                selectedCustomCategory = null
+                            },
                             label = { Text(cat.arabicName) }
                         )
                     }
+                    customServiceCats.forEach { customCat ->
+                        FilterChip(
+                            selected = category == ServiceCategory.OTHER && selectedCustomCategory == customCat,
+                            onClick = {
+                                category = ServiceCategory.OTHER
+                                selectedCustomCategory = customCat
+                            },
+                            label = { Text(customCat) }
+                        )
+                    }
+                    FilterChip(
+                        selected = category == ServiceCategory.OTHER && selectedCustomCategory == null,
+                        onClick = {
+                            category = ServiceCategory.OTHER
+                            selectedCustomCategory = null
+                        },
+                        label = { Text(ServiceCategory.OTHER.arabicName) },
+                        modifier = Modifier.testTag("service_category_other_chip")
+                    )
+                }
+
+                if (category == ServiceCategory.OTHER && selectedCustomCategory == null) {
+                    CustomOptionInputRow(
+                        prefKey = CustomOptionsPrefs.KEY_SERVICE_CATS,
+                        onCustomAdded = { newCat ->
+                            customServiceCats = CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_SERVICE_CATS)
+                            category = ServiceCategory.OTHER
+                            selectedCustomCategory = newCat
+                        },
+                        onDraftChange = { customCategoryDraft = it }
+                    )
                 }
 
                 OutlinedTextField(
@@ -199,16 +243,11 @@ fun AddServiceDialog(
                         .testTag("service_specialty_input")
                 )
 
-                OutlinedTextField(
-                    value = workPhone,
-                    onValueChange = { if (it.length <= 30) workPhone = it; validationError = null },
-                    label = { Text("رقم هاتف العمل *") },
-                    placeholder = { Text("09XXXXXXXX") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("service_phone_input")
+                MultiplePhoneInputField(
+                    phones = servicePhones,
+                    onPhonesChange = { servicePhones = it; validationError = null },
+                    label = "رقم هاتف العمل *",
+                    firstFieldTestTag = "service_phone_input"
                 )
 
                 Text("الموقع في الحي:", style = MaterialTheme.typography.labelLarge)
@@ -249,13 +288,28 @@ fun AddServiceDialog(
                 onClick = {
                     val trimmedName = name.trim()
                     val trimmedSpec = specialty.trim()
-                    val trimmedPhone = workPhone.trim()
+                    val primaryPhone = servicePhones.firstOrNull { it.number.isNotBlank() }?.number?.trim().orEmpty()
+                    val formattedPhones = PhoneEntry.formatForDisplay(servicePhones)
+                    if (category == ServiceCategory.OTHER && selectedCustomCategory == null && customCategoryDraft.trim().isNotBlank()) {
+                        val newCat = customCategoryDraft.trim()
+                        CustomOptionsPrefs.addCustomOption(context, CustomOptionsPrefs.KEY_SERVICE_CATS, newCat)
+                        customServiceCats = CustomOptionsPrefs.getCustomOptions(context, CustomOptionsPrefs.KEY_SERVICE_CATS)
+                        selectedCustomCategory = newCat
+                    }
                     when {
                         trimmedName.length < 2 -> validationError = "يرجى إدخال اسم من حرفين على الأقل"
                         trimmedSpec.length < 2 -> validationError = "يرجى إدخال التخصص من حرفين على الأقل"
-                        trimmedPhone.length < 4 -> validationError = "يرجى إدخال رقم هاتف صحيح"
+                        primaryPhone.length < 4 -> validationError = "يرجى إدخال رقم هاتف صحيح"
                         else -> {
-                            onSubmit(trimmedName, category, trimmedSpec, sector, trimmedPhone, workingHours, notes)
+                            val finalNotes = buildString {
+                                selectedCustomCategory?.let { append("تصنيف: $it") }
+                                val notesTrimmed = notes.trim()
+                                if (notesTrimmed.isNotBlank()) {
+                                    if (isNotEmpty()) append(" • ")
+                                    append(notesTrimmed)
+                                }
+                            }.takeIf { it.isNotBlank() }
+                            onSubmit(trimmedName, category, trimmedSpec, sector, formattedPhones, workingHours, finalNotes)
                             onDismiss()
                         }
                     }

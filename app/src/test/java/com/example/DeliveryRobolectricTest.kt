@@ -275,7 +275,119 @@ class DeliveryRobolectricTest {
         assertEquals("0933125102", driverWhatsAppPhone)
         val sentDriverMsg = requireNotNull(driverWhatsAppMessage)
         assertTrue(sentDriverMsg.contains("فادي بركات"))
-        assertTrue(sentDriverMsg.contains("0933998877"))
+        assertTrue(sentDriverMsg.contains("0933998877 (موبايل)"))
         assertTrue(sentDriverMsg.contains("بيك أب"))
+    }
+
+    @Test
+    fun `custom other option saves permanently shows agreement fare and supports multiple phones`() {
+        var capturedMsg: String? = null
+
+        composeTestRule.setContent {
+            HayAlWurudApp(
+                updateChecker = { null },
+                gpsLocationFetcher = { Result.failure(IllegalStateException("unused")) },
+                onOpenWhatsApp = { _, _, msg -> capturedMsg = msg }
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("nav_delivery").performClick()
+        composeTestRule.waitForIdle()
+
+        // 1. Select "أخرى" in delivery zone dropdown, enter custom zone "المزة جبل", and click "حفظ"
+        composeTestRule.onNodeWithTag("delivery_zone_dropdown").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("delivery_zone_option_other").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("custom_option_input_custom_delivery_zones")
+            .performScrollTo()
+            .performTextInput("المزة جبل")
+        composeTestRule.onNodeWithTag("save_custom_option_button_custom_delivery_zones")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        // Newly saved zone is auto-selected in dropdown and fare calculator shows WhatsApp agreement text
+        composeTestRule.onNodeWithTag("delivery_zone_dropdown")
+            .performScrollTo()
+            .assertTextContains("المزة جبل")
+        composeTestRule.onNodeWithTag("estimated_fare_value")
+            .performScrollTo()
+            .assertTextContains("يتم تحديد السعر بدقة بالاتفاق عبر واتساب")
+
+        // 2. Add two extra phone rows via (+), delete the third via (-), set second as landline
+        composeTestRule.onNodeWithTag("customer_phone_input")
+            .performScrollTo()
+            .performTextInput("0933112233")
+        composeTestRule.onNodeWithTag("customer_phone_input_add_button")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag("customer_phone_input_add_button")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("customer_phone_input_2").assertExists()
+        composeTestRule.onNodeWithTag("customer_phone_input_remove_button_2")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("customer_phone_input_2").assertDoesNotExist()
+
+        composeTestRule.onNodeWithTag("customer_phone_input_1")
+            .performScrollTo()
+            .performTextInput("0113344556")
+        composeTestRule.onNodeWithTag("customer_phone_input_type_1")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("هاتف أرضي").performClick()
+        composeTestRule.waitForIdle()
+
+        // Fill remaining fields and submit
+        composeTestRule.onNodeWithTag("pickup_location_input")
+            .performScrollTo()
+            .performTextInput("سوق حي الورود")
+        composeTestRule.onNodeWithTag("order_details_input")
+            .performScrollTo()
+            .performTextInput("طرد خاص")
+        composeTestRule.onNodeWithTag("detailed_address_input")
+            .performScrollTo()
+            .performTextInput("شارع المدارس")
+        composeTestRule.onNodeWithTag("customer_name_input")
+            .performScrollTo()
+            .performTextInput("طارق العلي")
+        composeTestRule.onNodeWithTag("submit_delivery_button")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.mainClock.advanceTimeBy(5000L)
+        composeTestRule.waitForIdle()
+
+        val msg = requireNotNull(capturedMsg)
+        assertTrue(msg.contains("المزة جبل"))
+        assertTrue(msg.contains("0933112233 (موبايل)"))
+        assertTrue(msg.contains("0113344556 (هاتف أرضي)"))
+        assertTrue(msg.contains("يتم تحديد السعر بدقة بالاتفاق عبر واتساب"))
+
+        // Switch away and back to verify permanent persistence of custom zone and both phones
+        Thread.sleep(250)
+        composeTestRule.onNodeWithTag("nav_stores").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("nav_delivery").performClick()
+        composeTestRule.waitForIdle()
+        Thread.sleep(150)
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("delivery_zone_dropdown")
+            .performScrollTo()
+            .assertTextContains("المزة جبل")
+        composeTestRule.onNodeWithTag("customer_phone_input")
+            .performScrollTo()
+            .assertTextContains("0933112233")
+        composeTestRule.onNodeWithTag("customer_phone_input_1")
+            .performScrollTo()
+            .assertTextContains("0113344556")
     }
 }

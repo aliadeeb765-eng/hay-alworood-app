@@ -1104,11 +1104,11 @@ private fun NeighborhoodShellContent(
         val dialogContext = LocalContext.current
         JoinDeliveryDriverDialog(
             onDismiss = { showJoinDriverDialog = false },
-            onSubmitDriver = { fullName, phone, vehicleType ->
+            onSubmitDriver = { fullName, phones, vehicleTypeLabel ->
                 val message = buildDriverRegistrationWhatsAppMessage(
                     fullName = fullName,
-                    phone = phone,
-                    vehicleType = vehicleType
+                    phones = phones,
+                    vehicleTypeLabel = vehicleTypeLabel
                 )
                 onOpenWhatsApp(dialogContext, DELIVERY_ADMIN_WHATSAPP_PHONE, message)
             }
